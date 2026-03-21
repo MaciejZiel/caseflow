@@ -5,15 +5,15 @@ The project is being built as a modular monolith with FastAPI, SQLAlchemy and Po
 with explicit focus on tenant isolation, RBAC, async document workflows, auditability and
 operational readiness.
 
-## Current Scope
+## Implemented So Far
 
-The repository currently contains the foundational project structure and developer tooling.
-The next implementation slices are:
-
-1. runtime foundation and health endpoints
-2. database layer and migrations
-3. organization registration with first owner account
-4. authentication and tenant-aware case workflows
+- project scaffold and developer tooling
+- FastAPI app factory with structured logging, request IDs and metrics
+- liveness and readiness probes
+- SQLAlchemy foundation and Alembic configuration
+- core identity schema for organizations, users and memberships
+- organization registration with first owner account
+- login and current session endpoint
 
 ## Planned Stack
 
@@ -30,5 +30,13 @@ The next implementation slices are:
 
 1. Create or reuse `.venv`.
 2. Install dependencies with `make install`.
-3. Start the API with `make run`.
-4. Run tests with `make test`.
+3. Apply migrations with `make migrate`.
+4. Start the API with `make run`.
+5. Run tests with `make test`.
+
+## Next Milestones
+
+- refresh tokens and logout
+- invitations and membership management
+- RBAC enforcement for organization actions
+- case CRUD with tenant isolation

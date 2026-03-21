@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 from functools import lru_cache
 
 from sqlalchemy import create_engine, text
@@ -33,7 +33,7 @@ def get_session_factory() -> sessionmaker[Session]:
     return sessionmaker(bind=get_engine(), autoflush=False, expire_on_commit=False)
 
 
-def get_db_session() -> Generator[Session]:
+async def get_db_session() -> AsyncGenerator[Session]:
     session = get_session_factory()()
     try:
         yield session

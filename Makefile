@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 PIP ?= .venv/bin/pip
 
-.PHONY: install lint format test run
+.PHONY: install lint format test migrate run
 
 install:
 	$(PIP) install -e ".[dev]"
@@ -14,6 +14,9 @@ format:
 
 test:
 	$(PYTHON) -m pytest
+
+migrate:
+	$(PYTHON) -m alembic upgrade head
 
 run:
 	$(PYTHON) -m uvicorn app.main:app --reload

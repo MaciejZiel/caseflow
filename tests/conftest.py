@@ -15,6 +15,7 @@ async def async_client(tmp_path, monkeypatch) -> httpx.AsyncClient:
     database_path = tmp_path / "caseflow-test.db"
     monkeypatch.setenv("DATABASE_URL", f"sqlite+pysqlite:///{database_path}")
     monkeypatch.setenv("TEST_DATABASE_URL", f"sqlite+pysqlite:///{database_path}")
+    monkeypatch.setenv("SECRET_KEY", "test-secret-key-with-32-plus-bytes")
 
     get_settings.cache_clear()
     reset_db_state()
