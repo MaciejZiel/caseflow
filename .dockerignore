@@ -1,0 +1,11 @@
+.git
+.idea
+.pytest_cache
+.ruff_cache
+.venv
+CASEFLOW_BACKEND_PROJECT_MASTERPLAN.txt
+storage
+__pycache__
+*.pyc
+*.pyo
+*.pyd
