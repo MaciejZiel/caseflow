@@ -3,8 +3,10 @@
 from fastapi import APIRouter
 
 from app.api.v1.routes.auth import router as auth_router
+from app.api.v1.routes.cases import router as cases_router
 from app.api.v1.routes.organizations import router as organizations_router
 
 api_router = APIRouter()
 api_router.include_router(auth_router, tags=["auth"])
+api_router.include_router(cases_router, tags=["cases"])
 api_router.include_router(organizations_router, tags=["organizations"])
