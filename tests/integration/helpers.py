@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+
 import httpx
 
 
@@ -24,6 +26,20 @@ async def register_owner(async_client: httpx.AsyncClient) -> dict[str, str]:
         "organization_slug": body["organization"]["slug"],
         "organization_id": body["organization"]["id"],
     }
+
+
+async def create_case(
+    async_client: httpx.AsyncClient,
+    *,
+    access_token: str,
+    title: str = "Primary case",
+) -> dict[str, object]:
+    response = await async_client.post(
+        "/api/v1/cases",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json={"title": title},
+    )
+    return response.json()
 
 
 async def create_invitation(
@@ -62,3 +78,7 @@ async def accept_invitation(
         "status_code": response.status_code,
         "body": response.json(),
     }
+
+
+def encode_document_content(content: bytes) -> str:
+    return base64.b64encode(content).decode("ascii")

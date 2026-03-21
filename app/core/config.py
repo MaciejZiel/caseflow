@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     refresh_token_ttl_days: int = Field(default=30, alias="REFRESH_TOKEN_TTL_DAYS")
     invitation_ttl_hours: int = Field(default=168, alias="INVITATION_TTL_HOURS")
     local_storage_path: Path = Field(default=Path("./storage"), alias="LOCAL_STORAGE_PATH")
+    max_upload_size_bytes: int = Field(default=10 * 1024 * 1024, alias="MAX_UPLOAD_SIZE_BYTES")
 
 
 @lru_cache
