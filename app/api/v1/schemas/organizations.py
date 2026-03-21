@@ -6,8 +6,9 @@ from datetime import datetime
 from email.utils import parseaddr
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.api.v1.schemas.auth import MembershipResponse, OrganizationResponse, UserResponse
 from app.domain.organizations.models import OrganizationRole
 
 
@@ -62,3 +63,24 @@ class InvitationResponse(BaseModel):
 class InvitationCreateResponse(BaseModel):
     invitation: InvitationResponse
     invitation_token: str
+
+
+class OrganizationContextResponse(BaseModel):
+    organization: OrganizationResponse
+    membership: MembershipResponse
+
+
+class OrganizationMemberResponse(MembershipResponse):
+    user: UserResponse
+
+
+class OrganizationMemberUpdateRequest(BaseModel):
+    role: OrganizationRole | None = None
+    is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_payload(self) -> OrganizationMemberUpdateRequest:
+        if self.role is None and self.is_active is None:
+            msg = "Provide at least one field to update."
+            raise ValueError(msg)
+        return self

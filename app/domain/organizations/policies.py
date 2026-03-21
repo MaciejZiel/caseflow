@@ -8,6 +8,8 @@ from app.core.errors import PermissionDeniedError
 from app.domain.organizations.models import OrganizationRole
 
 INVITATION_MANAGER_ROLES = frozenset({OrganizationRole.OWNER, OrganizationRole.ADMIN})
+MEMBER_VIEWER_ROLES = frozenset({OrganizationRole.OWNER, OrganizationRole.ADMIN})
+MEMBER_MANAGER_ROLES = frozenset({OrganizationRole.OWNER, OrganizationRole.ADMIN})
 
 
 def ensure_role_allowed(
