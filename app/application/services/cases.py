@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 
 from app.api.v1.schemas.cases import CaseCreateRequest, CaseUpdateRequest
 from app.application.actors import ActorContext
+from app.application.services.events import EventPublisher
+from app.application.services.webhooks import WebhookService
 from app.core.errors import ConflictError, DomainValidationError, NotFoundError
 from app.domain.cases.models import Case, CasePriority, CaseStatus
 from app.domain.cases.policies import CASE_READ_ROLES, CASE_WRITE_ROLES
@@ -21,6 +23,7 @@ from app.domain.organizations.policies import ensure_role_allowed
 class CaseService:
     def __init__(self, session: Session) -> None:
         self.session = session
+        self.publisher = EventPublisher(session)
 
     def create_case(self, *, actor: ActorContext, payload: CaseCreateRequest) -> Case:
         ensure_role_allowed(
@@ -43,6 +46,15 @@ class CaseService:
 
         try:
             self.session.add(case)
+            self.session.flush()
+            delivery_ids = self.publisher.record_event(
+                organization_id=actor.organization.id,
+                actor_user_id=actor.user.id,
+                event_type="case.created",
+                entity_type="case",
+                entity_id=case.id,
+                new_values=self._case_snapshot(case),
+            )
             self.session.commit()
         except IntegrityError as exc:
             self.session.rollback()
@@ -52,6 +64,7 @@ class CaseService:
             ) from exc
 
         self.session.refresh(case)
+        WebhookService(self.session).dispatch_deliveries(delivery_ids)
         return case
 
     def list_cases(
@@ -117,6 +130,8 @@ class CaseService:
         if "owner_user_id" in payload.model_fields_set:
             self._validate_case_owner(actor=actor, owner_user_id=payload.owner_user_id)
 
+        old_values = self._case_snapshot(case)
+        previous_status = case.status
         for field_name in payload.model_fields_set:
             if field_name not in {
                 "title",
@@ -132,6 +147,28 @@ class CaseService:
             setattr(case, field_name, value)
 
         try:
+            self.session.flush()
+            delivery_ids = self.publisher.record_event(
+                organization_id=actor.organization.id,
+                actor_user_id=actor.user.id,
+                event_type="case.updated",
+                entity_type="case",
+                entity_id=case.id,
+                old_values=old_values,
+                new_values=self._case_snapshot(case),
+            )
+            if previous_status != case.status:
+                delivery_ids.extend(
+                    self.publisher.record_event(
+                        organization_id=actor.organization.id,
+                        actor_user_id=actor.user.id,
+                        event_type="case.status_changed",
+                        entity_type="case",
+                        entity_id=case.id,
+                        old_values={"status": previous_status},
+                        new_values={"status": case.status},
+                    )
+                )
             self.session.commit()
         except IntegrityError as exc:
             self.session.rollback()
@@ -141,6 +178,7 @@ class CaseService:
             ) from exc
 
         self.session.refresh(case)
+        WebhookService(self.session).dispatch_deliveries(delivery_ids)
         return case
 
     def archive_case(self, *, actor: ActorContext, case_id: UUID) -> Case:
@@ -158,10 +196,33 @@ class CaseService:
                 "Case has already been archived.",
             )
 
+        old_values = self._case_snapshot(case)
         case.archived_at = datetime.now(UTC)
         case.status = CaseStatus.ARCHIVED
+        self.session.flush()
+        delivery_ids = self.publisher.record_event(
+            organization_id=actor.organization.id,
+            actor_user_id=actor.user.id,
+            event_type="case.archived",
+            entity_type="case",
+            entity_id=case.id,
+            old_values=old_values,
+            new_values=self._case_snapshot(case),
+        )
+        delivery_ids.extend(
+            self.publisher.record_event(
+                organization_id=actor.organization.id,
+                actor_user_id=actor.user.id,
+                event_type="case.status_changed",
+                entity_type="case",
+                entity_id=case.id,
+                old_values={"status": old_values["status"]},
+                new_values={"status": case.status},
+            )
+        )
         self.session.commit()
         self.session.refresh(case)
+        WebhookService(self.session).dispatch_deliveries(delivery_ids)
         return case
 
     def _get_case_for_actor(self, *, actor: ActorContext, case_id: UUID) -> Case | None:
@@ -188,3 +249,18 @@ class CaseService:
                 "invalid_case_owner",
                 "Selected case owner is not an active member of the organization.",
             )
+
+    @staticmethod
+    def _case_snapshot(case: Case) -> dict[str, object]:
+        return {
+            "id": case.id,
+            "external_id": case.external_id,
+            "title": case.title,
+            "description": case.description,
+            "status": case.status,
+            "priority": case.priority,
+            "owner_user_id": case.owner_user_id,
+            "created_by": case.created_by,
+            "due_date": case.due_date,
+            "archived_at": case.archived_at,
+        }

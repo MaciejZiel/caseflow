@@ -19,6 +19,8 @@ from app.api.v1.schemas.documents import (
     DocumentVersionUploadRequest,
 )
 from app.application.actors import ActorContext
+from app.application.services.events import EventPublisher
+from app.application.services.webhooks import WebhookService
 from app.core.config import get_settings
 from app.core.errors import DomainValidationError, NotFoundError
 from app.domain.cases.models import Case, CaseStatus
@@ -75,6 +77,7 @@ class DocumentService:
         self.session = session
         self.storage = storage or LocalFileStorage()
         self.settings = get_settings()
+        self.publisher = EventPublisher(session)
 
     def create_document(
         self,
@@ -95,7 +98,8 @@ class DocumentService:
             raise DomainValidationError(
                 "archived_case_document_upload_forbidden",
                 "Cannot upload documents to an archived case.",
-        )
+            )
+        previous_case_status = case.status
         case.status = CaseStatus.IN_REVIEW
 
         prepared_upload = self._prepare_upload(
@@ -151,6 +155,15 @@ class DocumentService:
             version=version,
             job=job,
             content=prepared_upload.content,
+            actor_user_id=actor.user.id,
+            event_type="document.uploaded",
+            metadata={
+                "document_version_id": version.id,
+                "job_id": job.id,
+                "version_number": version.version_number,
+            },
+            case=case,
+            previous_case_status=previous_case_status,
         )
         return DocumentWriteResult(document=document, job=job)
 
@@ -199,6 +212,7 @@ class DocumentService:
                 "document_version_upload_forbidden",
                 "Cannot upload a new version for a document in an archived or missing case.",
             )
+        previous_case_status = case.status
         case.status = CaseStatus.IN_REVIEW
 
         prepared_upload = self._prepare_upload(
@@ -251,6 +265,15 @@ class DocumentService:
             version=version,
             job=job,
             content=prepared_upload.content,
+            actor_user_id=actor.user.id,
+            event_type="document.version_uploaded",
+            metadata={
+                "document_version_id": version.id,
+                "job_id": job.id,
+                "version_number": version.version_number,
+            },
+            case=case,
+            previous_case_status=previous_case_status,
         )
         return DocumentWriteResult(document=document, job=job)
 
@@ -325,6 +348,7 @@ class DocumentService:
         if document is None or version is None or case is None:
             return
 
+        previous_case_status = case.status
         job.attempts += 1
         job.status = ProcessingJobStatus.RUNNING
         job.started_at = datetime.now(UTC)
@@ -348,6 +372,7 @@ class DocumentService:
                 document=document,
                 version=version,
                 case=case,
+                previous_case_status=previous_case_status,
                 error=exc,
             )
             return
@@ -363,7 +388,29 @@ class DocumentService:
         job.status = ProcessingJobStatus.SUCCEEDED
         job.finished_at = datetime.now(UTC)
         case.status = CaseStatus.IN_REVIEW
+        delivery_ids = self.publisher.record_event(
+            organization_id=document.organization_id,
+            actor_user_id=None,
+            event_type="document.processing_succeeded",
+            entity_type="document",
+            entity_id=document.id,
+            new_values=self._document_snapshot(document),
+            metadata={
+                "document_version_id": version.id,
+                "job_id": job.id,
+                "processing_status": version.processing_status,
+            },
+        )
+        delivery_ids.extend(
+            self._record_case_status_change_if_needed(
+                case=case,
+                previous_status=previous_case_status,
+                actor_user_id=None,
+                metadata={"document_id": document.id, "job_id": job.id},
+            )
+        )
         self.session.commit()
+        WebhookService(self.session).dispatch_deliveries(delivery_ids)
 
     def _build_processing_job(
         self,
@@ -396,12 +443,35 @@ class DocumentService:
         version: DocumentVersion,
         job: ProcessingJob,
         content: bytes,
+        actor_user_id: UUID,
+        event_type: str,
+        metadata: dict[str, object],
+        case: Case,
+        previous_case_status: CaseStatus,
     ) -> None:
         self.storage.save_file(storage_key=version.storage_key, content=content)
         try:
             self.session.add(document)
             self.session.add(version)
             self.session.add(job)
+            self.session.flush()
+            delivery_ids = self.publisher.record_event(
+                organization_id=document.organization_id,
+                actor_user_id=actor_user_id,
+                event_type=event_type,
+                entity_type="document",
+                entity_id=document.id,
+                new_values=self._document_snapshot(document),
+                metadata=metadata,
+            )
+            delivery_ids.extend(
+                self._record_case_status_change_if_needed(
+                    case=case,
+                    previous_status=previous_case_status,
+                    actor_user_id=actor_user_id,
+                    metadata={"document_id": document.id},
+                )
+            )
             self.session.commit()
         except Exception:
             self.session.rollback()
@@ -409,6 +479,7 @@ class DocumentService:
             raise
 
         self.session.refresh(document)
+        WebhookService(self.session).dispatch_deliveries(delivery_ids)
 
     def _prepare_upload(
         self,
@@ -478,6 +549,7 @@ class DocumentService:
             decision=decision,
             reason=reason.strip() if reason is not None else None,
         )
+        previous_document_status = document.status
         document.status = (
             DocumentStatus.APPROVED
             if decision == DocumentReviewDecision.APPROVED
@@ -488,13 +560,37 @@ class DocumentService:
         case = self._get_case_for_actor(actor=actor, case_id=document.case_id)
         if case is None:
             raise NotFoundError("case", "Case does not exist.")
+        previous_case_status = case.status
         case.status = self._calculate_case_status_after_review(
             case=case,
             current_document=document,
         )
+        delivery_ids = self.publisher.record_event(
+            organization_id=actor.organization.id,
+            actor_user_id=actor.user.id,
+            event_type=(
+                "document.approved"
+                if decision == DocumentReviewDecision.APPROVED
+                else "document.rejected"
+            ),
+            entity_type="document",
+            entity_id=document.id,
+            old_values={"status": previous_document_status},
+            new_values=self._document_snapshot(document),
+            metadata={"reason": review.reason},
+        )
+        delivery_ids.extend(
+            self._record_case_status_change_if_needed(
+                case=case,
+                previous_status=previous_case_status,
+                actor_user_id=actor.user.id,
+                metadata={"document_id": document.id, "decision": decision},
+            )
+        )
 
         self.session.commit()
         self.session.refresh(document)
+        WebhookService(self.session).dispatch_deliveries(delivery_ids)
         return document
 
     def _calculate_case_status_after_review(
@@ -528,6 +624,7 @@ class DocumentService:
         document: Document,
         version: DocumentVersion,
         case: Case,
+        previous_case_status: CaseStatus,
         error: Exception,
     ) -> None:
         job.last_error = str(error)
@@ -540,7 +637,29 @@ class DocumentService:
         document.status = DocumentStatus.FAILED
         version.processing_status = DocumentProcessingStatus.FAILED
         case.status = CaseStatus.WAITING_FOR_DOCUMENTS
+        delivery_ids = self.publisher.record_event(
+            organization_id=document.organization_id,
+            actor_user_id=None,
+            event_type="document.processing_failed",
+            entity_type="document",
+            entity_id=document.id,
+            new_values=self._document_snapshot(document),
+            metadata={
+                "document_version_id": version.id,
+                "job_id": job.id,
+                "last_error": job.last_error,
+            },
+        )
+        delivery_ids.extend(
+            self._record_case_status_change_if_needed(
+                case=case,
+                previous_status=previous_case_status,
+                actor_user_id=None,
+                metadata={"document_id": document.id, "job_id": job.id},
+            )
+        )
         self.session.commit()
+        WebhookService(self.session).dispatch_deliveries(delivery_ids)
 
     def _extract_payload(
         self,
@@ -558,6 +677,44 @@ class DocumentService:
             "preview_text": preview_lines[0] if preview_lines else preview_text[:120],
             "size_bytes": version.size_bytes,
             "storage_url": self.storage.build_public_or_signed_url(storage_key=version.storage_key),
+        }
+
+    def _record_case_status_change_if_needed(
+        self,
+        *,
+        case: Case,
+        previous_status: CaseStatus,
+        actor_user_id: UUID | None,
+        metadata: dict[str, object] | None = None,
+    ) -> list[UUID]:
+        if case.status == previous_status:
+            return []
+        return self.publisher.record_event(
+            organization_id=case.organization_id,
+            actor_user_id=actor_user_id,
+            event_type="case.status_changed",
+            entity_type="case",
+            entity_id=case.id,
+            old_values={"status": previous_status},
+            new_values={"status": case.status},
+            metadata=metadata,
+        )
+
+    @staticmethod
+    def _document_snapshot(document: Document) -> dict[str, object]:
+        return {
+            "id": document.id,
+            "case_id": document.case_id,
+            "current_version_id": document.current_version_id,
+            "document_type": document.document_type,
+            "title": document.title,
+            "status": document.status,
+            "uploaded_by": document.uploaded_by,
+            "checksum": document.checksum,
+            "mime_type": document.mime_type,
+            "size_bytes": document.size_bytes,
+            "storage_key": document.storage_key,
+            "deleted_at": document.deleted_at,
         }
 
     def _get_case_for_actor(self, *, actor: ActorContext, case_id: UUID) -> Case | None:

@@ -9,7 +9,9 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import CurrentActor, get_current_actor
+from app.api.v1.schemas.audit import AuditLogResponse
 from app.api.v1.schemas.cases import CaseCreateRequest, CaseResponse, CaseUpdateRequest
+from app.application.services.audit import AuditService
 from app.application.services.cases import CaseService
 from app.domain.cases.models import CasePriority, CaseStatus
 from app.infrastructure.db.session import get_db_session
@@ -85,3 +87,18 @@ async def archive_case(
 ) -> CaseResponse:
     case = CaseService(session).archive_case(actor=actor, case_id=case_id)
     return CaseResponse.model_validate(case, from_attributes=True)
+
+
+@router.get("/{case_id}/audit-log", response_model=list[AuditLogResponse])
+async def list_case_audit_log(
+    case_id: UUID,
+    actor: CurrentActorDep,
+    session: SessionDep,
+) -> list[AuditLogResponse]:
+    CaseService(session).get_case(actor=actor, case_id=case_id)
+    logs = AuditService(session).list_entity_logs(
+        organization_id=actor.organization.id,
+        entity_type="case",
+        entity_id=case_id,
+    )
+    return [AuditLogResponse.model_validate(log, from_attributes=True) for log in logs]

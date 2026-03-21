@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import CurrentActor, get_current_actor
+from app.api.v1.schemas.audit import AuditLogResponse
 from app.api.v1.schemas.documents import (
     DocumentApproveRequest,
     DocumentRejectRequest,
@@ -18,6 +19,7 @@ from app.api.v1.schemas.documents import (
     DocumentVersionUploadRequest,
     ProcessingJobResponse,
 )
+from app.application.services.audit import AuditService
 from app.application.services.documents import DocumentService
 from app.infrastructure.db.session import get_db_session
 
@@ -102,6 +104,21 @@ async def list_document_jobs(
 ) -> list[ProcessingJobResponse]:
     jobs = DocumentService(session).list_jobs(actor=actor, document_id=document_id)
     return [ProcessingJobResponse.model_validate(job, from_attributes=True) for job in jobs]
+
+
+@document_router.get("/{document_id}/audit-log", response_model=list[AuditLogResponse])
+async def list_document_audit_log(
+    document_id: UUID,
+    actor: CurrentActorDep,
+    session: SessionDep,
+) -> list[AuditLogResponse]:
+    DocumentService(session).get_document(actor=actor, document_id=document_id)
+    logs = AuditService(session).list_entity_logs(
+        organization_id=actor.organization.id,
+        entity_type="document",
+        entity_id=document_id,
+    )
+    return [AuditLogResponse.model_validate(log, from_attributes=True) for log in logs]
 
 
 @document_router.post("/{document_id}/approve", response_model=DocumentResponse)

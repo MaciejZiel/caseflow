@@ -14,3 +14,6 @@ def test_core_identity_tables_are_registered() -> None:
     assert "document_versions" in Base.metadata.tables
     assert "document_reviews" in Base.metadata.tables
     assert "processing_jobs" in Base.metadata.tables
+    assert "audit_logs" in Base.metadata.tables
+    assert "webhook_endpoints" in Base.metadata.tables
+    assert "webhook_deliveries" in Base.metadata.tables
