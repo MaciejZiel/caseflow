@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Annotated
 from uuid import UUID
 
@@ -11,8 +10,9 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
+from app.application.actors import ActorContext
 from app.core.errors import AuthenticationError
-from app.domain.organizations.models import Organization, OrganizationMembership
+from app.domain.organizations.models import OrganizationMembership
 from app.domain.users.models import User
 from app.infrastructure.db.session import get_db_session
 from app.infrastructure.security.tokens import decode_access_token
@@ -20,16 +20,7 @@ from app.infrastructure.security.tokens import decode_access_token
 bearer_scheme = HTTPBearer(auto_error=False)
 CredentialsDep = Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)]
 SessionDep = Annotated[Session, Depends(get_db_session)]
-
-
-@dataclass(slots=True)
-class CurrentActor:
-    user: User
-    membership: OrganizationMembership
-
-    @property
-    def organization(self) -> Organization:
-        return self.membership.organization
+CurrentActor = ActorContext
 
 async def get_current_actor(
     credentials: CredentialsDep,

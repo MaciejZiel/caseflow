@@ -36,7 +36,6 @@ class AuthResult:
 class AuthService:
     def __init__(self, session: Session) -> None:
         self.session = session
-        self.settings = get_settings()
 
     def register_organization_owner(self, payload: RegistrationRequest) -> AuthResult:
         if self._email_exists(payload.email):
@@ -77,7 +76,7 @@ class AuthService:
         self.session.refresh(membership)
         self.session.refresh(user)
         self.session.refresh(organization)
-        return self._build_auth_result(user=user, organization=organization, membership=membership)
+        return build_auth_result(user=user, organization=organization, membership=membership)
 
     def login(self, payload: LoginRequest) -> AuthResult:
         user = self.session.scalar(select(User).where(User.email == payload.email))
@@ -95,7 +94,7 @@ class AuthService:
         if membership.organization.status is not OrganizationStatus.ACTIVE:
             raise AuthenticationError("Selected organization is not active.")
 
-        return self._build_auth_result(
+        return build_auth_result(
             user=user,
             organization=membership.organization,
             membership=membership,
@@ -133,27 +132,6 @@ class AuthService:
             )
         return memberships[0]
 
-    def _build_auth_result(
-        self,
-        *,
-        user: User,
-        organization: Organization,
-        membership: OrganizationMembership,
-    ) -> AuthResult:
-        token, expires_in = create_access_token(
-            user_id=user.id,
-            organization_id=organization.id,
-            role=membership.role.value,
-        )
-        return AuthResult(
-            access_token=token,
-            token_type="bearer",
-            expires_in=expires_in,
-            user=user,
-            organization=organization,
-            membership=membership,
-        )
-
     def _email_exists(self, email: str) -> bool:
         return self.session.scalar(select(User.id).where(User.email == email)) is not None
 
@@ -162,3 +140,25 @@ class AuthService:
             self.session.scalar(select(Organization.id).where(Organization.slug == slug))
             is not None
         )
+
+
+def build_auth_result(
+    *,
+    user: User,
+    organization: Organization,
+    membership: OrganizationMembership,
+) -> AuthResult:
+    settings = get_settings()
+    token, expires_in = create_access_token(
+        user_id=user.id,
+        organization_id=organization.id,
+        role=membership.role.value,
+    )
+    return AuthResult(
+        access_token=token,
+        token_type="bearer",
+        expires_in=expires_in or settings.access_token_ttl_minutes * 60,
+        user=user,
+        organization=organization,
+        membership=membership,
+    )

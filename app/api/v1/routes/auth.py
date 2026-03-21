@@ -14,7 +14,9 @@ from app.api.v1.schemas.auth import (
     RegistrationRequest,
     SessionResponse,
 )
+from app.api.v1.schemas.organizations import InvitationAcceptRequest
 from app.application.services.auth import AuthService
+from app.application.services.invitations import InvitationService
 from app.infrastructure.db.session import get_db_session
 
 router = APIRouter()
@@ -34,6 +36,19 @@ async def register_organization_owner(
 @router.post("/auth/login", response_model=AuthResponse)
 async def login(payload: LoginRequest, session: SessionDep) -> AuthResponse:
     result = AuthService(session).login(payload)
+    return AuthResponse.model_validate(result)
+
+
+@router.post(
+    "/auth/invitations/accept",
+    response_model=AuthResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def accept_invitation(
+    payload: InvitationAcceptRequest,
+    session: SessionDep,
+) -> AuthResponse:
+    result = InvitationService(session).accept_invitation(payload)
     return AuthResponse.model_validate(result)
 
 

@@ -44,6 +44,10 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="organization",
         cascade="all, delete-orphan",
     )
+    invitations: Mapped[list[Invitation]] = relationship(
+        back_populates="organization",
+        cascade="all, delete-orphan",
+    )
 
 
 class OrganizationMembership(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -66,3 +70,24 @@ class OrganizationMembership(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     organization: Mapped[Organization] = relationship(back_populates="memberships")
     user: Mapped[User] = relationship(back_populates="memberships")
+
+
+class Invitation(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "invitations"
+
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        index=True,
+    )
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    role: Mapped[OrganizationRole] = mapped_column(
+        Enum(OrganizationRole, name="organization_role", native_enum=False),
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime]
+    accepted_at: Mapped[datetime | None]
+    invited_by_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+
+    organization: Mapped[Organization] = relationship(back_populates="invitations")
+    invited_by_user: Mapped[User] = relationship()
