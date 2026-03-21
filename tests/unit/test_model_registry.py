@@ -10,3 +10,6 @@ def test_core_identity_tables_are_registered() -> None:
     assert "organization_memberships" in Base.metadata.tables
     assert "invitations" in Base.metadata.tables
     assert "cases" in Base.metadata.tables
+    assert "documents" in Base.metadata.tables
+    assert "document_versions" in Base.metadata.tables
+    assert "processing_jobs" in Base.metadata.tables
