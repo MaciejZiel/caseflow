@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import base64
+from collections.abc import Sequence
 
 import httpx
 
@@ -82,3 +84,24 @@ async def accept_invitation(
 
 def encode_document_content(content: bytes) -> str:
     return base64.b64encode(content).decode("ascii")
+
+
+async def wait_for_document_status(
+    async_client: httpx.AsyncClient,
+    *,
+    access_token: str,
+    document_id: str,
+    expected_statuses: Sequence[str],
+    attempts: int = 5,
+) -> dict[str, object]:
+    response_body: dict[str, object] = {}
+    for _ in range(attempts):
+        response = await async_client.get(
+            f"/api/v1/documents/{document_id}",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        response_body = response.json()
+        if response_body["status"] in expected_statuses:
+            return response_body
+        await asyncio.sleep(0.02)
+    return response_body

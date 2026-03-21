@@ -5,23 +5,36 @@ from __future__ import annotations
 import base64
 import binascii
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from hashlib import sha256
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.v1.schemas.documents import DocumentUploadRequest, DocumentVersionUploadRequest
+from app.api.v1.schemas.documents import (
+    DocumentApproveRequest,
+    DocumentRejectRequest,
+    DocumentUploadRequest,
+    DocumentVersionUploadRequest,
+)
 from app.application.actors import ActorContext
 from app.core.config import get_settings
 from app.core.errors import DomainValidationError, NotFoundError
-from app.domain.cases.models import Case
+from app.domain.cases.models import Case, CaseStatus
 from app.domain.documents.models import (
     Document,
     DocumentProcessingStatus,
+    DocumentReview,
+    DocumentReviewDecision,
     DocumentStatus,
     DocumentVersion,
 )
-from app.domain.documents.policies import DOCUMENT_READ_ROLES, DOCUMENT_WRITE_ROLES
+from app.domain.documents.policies import (
+    DOCUMENT_READ_ROLES,
+    DOCUMENT_REVIEW_ROLES,
+    DOCUMENT_WRITE_ROLES,
+)
 from app.domain.jobs.models import ProcessingJob, ProcessingJobStatus, ProcessingJobType
 from app.domain.organizations.policies import ensure_role_allowed
 from app.infrastructure.storage.local import LocalFileStorage
@@ -46,6 +59,12 @@ class PreparedUpload:
     size_bytes: int
 
 
+@dataclass(slots=True)
+class DocumentWriteResult:
+    document: Document
+    job: ProcessingJob
+
+
 class DocumentService:
     def __init__(
         self,
@@ -63,7 +82,7 @@ class DocumentService:
         actor: ActorContext,
         case_id: UUID,
         payload: DocumentUploadRequest,
-    ) -> Document:
+    ) -> DocumentWriteResult:
         ensure_role_allowed(
             actor.membership.role,
             allowed_roles=DOCUMENT_WRITE_ROLES,
@@ -76,7 +95,8 @@ class DocumentService:
             raise DomainValidationError(
                 "archived_case_document_upload_forbidden",
                 "Cannot upload documents to an archived case.",
-            )
+        )
+        case.status = CaseStatus.IN_REVIEW
 
         prepared_upload = self._prepare_upload(
             mime_type=payload.mime_type,
@@ -132,7 +152,7 @@ class DocumentService:
             job=job,
             content=prepared_upload.content,
         )
-        return document
+        return DocumentWriteResult(document=document, job=job)
 
     def get_document(self, *, actor: ActorContext, document_id: UUID) -> Document:
         ensure_role_allowed(
@@ -164,7 +184,7 @@ class DocumentService:
         actor: ActorContext,
         document_id: UUID,
         payload: DocumentVersionUploadRequest,
-    ) -> Document:
+    ) -> DocumentWriteResult:
         ensure_role_allowed(
             actor.membership.role,
             allowed_roles=DOCUMENT_WRITE_ROLES,
@@ -179,6 +199,7 @@ class DocumentService:
                 "document_version_upload_forbidden",
                 "Cannot upload a new version for a document in an archived or missing case.",
             )
+        case.status = CaseStatus.IN_REVIEW
 
         prepared_upload = self._prepare_upload(
             mime_type=payload.mime_type,
@@ -231,7 +252,7 @@ class DocumentService:
             job=job,
             content=prepared_upload.content,
         )
-        return document
+        return DocumentWriteResult(document=document, job=job)
 
     def list_jobs(self, *, actor: ActorContext, document_id: UUID) -> list[ProcessingJob]:
         self.get_document(actor=actor, document_id=document_id)
@@ -246,6 +267,104 @@ class DocumentService:
             )
         )
 
+    def approve_document(
+        self,
+        *,
+        actor: ActorContext,
+        document_id: UUID,
+        payload: DocumentApproveRequest,
+    ) -> Document:
+        return self._review_document(
+            actor=actor,
+            document_id=document_id,
+            decision=DocumentReviewDecision.APPROVED,
+            reason=payload.reason,
+        )
+
+    def reject_document(
+        self,
+        *,
+        actor: ActorContext,
+        document_id: UUID,
+        payload: DocumentRejectRequest,
+    ) -> Document:
+        return self._review_document(
+            actor=actor,
+            document_id=document_id,
+            decision=DocumentReviewDecision.REJECTED,
+            reason=payload.reason,
+        )
+
+    def process_document_job(self, *, job_id: UUID) -> None:
+        job = self.session.scalar(
+            select(ProcessingJob).where(ProcessingJob.id == job_id)
+        )
+        if job is None:
+            return
+        if job.status not in {ProcessingJobStatus.QUEUED, ProcessingJobStatus.FAILED}:
+            return
+
+        document = self.session.scalar(
+            select(Document).where(
+                Document.id == job.document_id,
+                Document.organization_id == job.organization_id,
+            )
+        )
+        version = self.session.scalar(
+            select(DocumentVersion).where(
+                DocumentVersion.id == job.document_version_id,
+                DocumentVersion.organization_id == job.organization_id,
+            )
+        )
+        case = self.session.scalar(
+            select(Case).where(
+                Case.id == UUID(str(job.payload_json["case_id"])),
+                Case.organization_id == job.organization_id,
+            )
+        )
+        if document is None or version is None or case is None:
+            return
+
+        job.attempts += 1
+        job.status = ProcessingJobStatus.RUNNING
+        job.started_at = datetime.now(UTC)
+        job.finished_at = None
+        job.last_error = None
+        document.status = DocumentStatus.PROCESSING
+        version.processing_status = DocumentProcessingStatus.PROCESSING
+        self.session.commit()
+
+        try:
+            file_content = self.storage.read_file(storage_key=version.storage_key)
+            checksum = sha256(file_content).hexdigest()
+            extracted_payload = self._extract_payload(
+                content=file_content,
+                version=version,
+            )
+        except Exception as exc:
+            self.session.rollback()
+            self._mark_processing_failed(
+                job=job,
+                document=document,
+                version=version,
+                case=case,
+                error=exc,
+            )
+            return
+
+        document.status = DocumentStatus.READY
+        document.checksum = checksum
+        document.mime_type = version.mime_type
+        document.size_bytes = version.size_bytes
+        document.storage_key = version.storage_key
+        version.processing_status = DocumentProcessingStatus.READY
+        version.checksum = checksum
+        version.extracted_payload_json = extracted_payload
+        job.status = ProcessingJobStatus.SUCCEEDED
+        job.finished_at = datetime.now(UTC)
+        case.status = CaseStatus.IN_REVIEW
+        self.session.commit()
+
     def _build_processing_job(
         self,
         *,
@@ -255,6 +374,7 @@ class DocumentService:
         event_name: str,
     ) -> ProcessingJob:
         return ProcessingJob(
+            id=uuid4(),
             organization_id=actor.organization.id,
             document_id=document.id,
             document_version_id=version.id,
@@ -265,6 +385,7 @@ class DocumentService:
                 "document_id": str(document.id),
                 "document_version_id": str(version.id),
                 "event_name": event_name,
+                "storage_key": version.storage_key,
             },
         )
 
@@ -327,6 +448,117 @@ class DocumentService:
             original_filename=LocalFileStorage.sanitize_filename(original_filename),
             size_bytes=len(content),
         )
+
+    def _review_document(
+        self,
+        *,
+        actor: ActorContext,
+        document_id: UUID,
+        decision: DocumentReviewDecision,
+        reason: str | None,
+    ) -> Document:
+        ensure_role_allowed(
+            actor.membership.role,
+            allowed_roles=DOCUMENT_REVIEW_ROLES,
+            message="Your role cannot review documents.",
+        )
+        document = self._get_document_for_actor(actor=actor, document_id=document_id)
+        if document is None:
+            raise NotFoundError("document", "Document does not exist.")
+        if document.status != DocumentStatus.READY:
+            raise DomainValidationError(
+                "document_review_forbidden",
+                "Only ready documents can be approved or rejected.",
+            )
+
+        review = DocumentReview(
+            organization_id=actor.organization.id,
+            document_id=document.id,
+            reviewer_user_id=actor.user.id,
+            decision=decision,
+            reason=reason.strip() if reason is not None else None,
+        )
+        document.status = (
+            DocumentStatus.APPROVED
+            if decision == DocumentReviewDecision.APPROVED
+            else DocumentStatus.REJECTED
+        )
+        self.session.add(review)
+        self.session.flush()
+        case = self._get_case_for_actor(actor=actor, case_id=document.case_id)
+        if case is None:
+            raise NotFoundError("case", "Case does not exist.")
+        case.status = self._calculate_case_status_after_review(
+            case=case,
+            current_document=document,
+        )
+
+        self.session.commit()
+        self.session.refresh(document)
+        return document
+
+    def _calculate_case_status_after_review(
+        self,
+        *,
+        case: Case,
+        current_document: Document,
+    ) -> CaseStatus:
+        if current_document.status == DocumentStatus.REJECTED:
+            return CaseStatus.REJECTED
+
+        document_statuses = list(
+            self.session.scalars(
+                select(Document.status).where(
+                    Document.case_id == case.id,
+                    Document.organization_id == case.organization_id,
+                    Document.deleted_at.is_(None),
+                )
+            )
+        )
+        if document_statuses and all(
+            status == DocumentStatus.APPROVED for status in document_statuses
+        ):
+            return CaseStatus.APPROVED
+        return CaseStatus.IN_REVIEW
+
+    def _mark_processing_failed(
+        self,
+        *,
+        job: ProcessingJob,
+        document: Document,
+        version: DocumentVersion,
+        case: Case,
+        error: Exception,
+    ) -> None:
+        job.last_error = str(error)
+        job.finished_at = datetime.now(UTC)
+        job.status = (
+            ProcessingJobStatus.DEAD_LETTERED
+            if job.attempts >= job.max_attempts
+            else ProcessingJobStatus.FAILED
+        )
+        document.status = DocumentStatus.FAILED
+        version.processing_status = DocumentProcessingStatus.FAILED
+        case.status = CaseStatus.WAITING_FOR_DOCUMENTS
+        self.session.commit()
+
+    def _extract_payload(
+        self,
+        *,
+        content: bytes,
+        version: DocumentVersion,
+    ) -> dict[str, object]:
+        preview_text = content[:200].decode("utf-8", errors="replace").strip()
+        preview_lines = [line for line in preview_text.splitlines() if line]
+        return {
+            "checksum_sha256": sha256(content).hexdigest(),
+            "line_count": len(content.decode("utf-8", errors="replace").splitlines()),
+            "mime_type": version.mime_type,
+            "original_filename": version.original_filename,
+            "preview_text": preview_lines[0] if preview_lines else preview_text[:120],
+            "size_bytes": version.size_bytes,
+            "storage_url": self.storage.build_public_or_signed_url(storage_key=version.storage_key),
+        }
 
     def _get_case_for_actor(self, *, actor: ActorContext, case_id: UUID) -> Case | None:
         return self.session.scalar(

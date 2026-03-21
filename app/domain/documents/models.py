@@ -40,6 +40,11 @@ class DocumentType(StrEnum):
     OTHER = "other"
 
 
+class DocumentReviewDecision(StrEnum):
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class Document(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "documents"
 
@@ -98,3 +103,22 @@ class DocumentVersion(UUIDPrimaryKeyMixin, Base):
     )
     extracted_payload_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+
+
+class DocumentReview(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "document_reviews"
+
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        index=True,
+    )
+    document_id: Mapped[UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"),
+        index=True,
+    )
+    reviewer_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    decision: Mapped[DocumentReviewDecision] = mapped_column(
+        Enum(DocumentReviewDecision, name="document_review_decision", native_enum=False),
+    )
+    reason: Mapped[str | None] = mapped_column(String(2_000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC), index=True)

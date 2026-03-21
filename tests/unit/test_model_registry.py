@@ -12,4 +12,5 @@ def test_core_identity_tables_are_registered() -> None:
     assert "cases" in Base.metadata.tables
     assert "documents" in Base.metadata.tables
     assert "document_versions" in Base.metadata.tables
+    assert "document_reviews" in Base.metadata.tables
     assert "processing_jobs" in Base.metadata.tables

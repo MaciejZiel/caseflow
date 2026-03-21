@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.auth import CurrentActor, get_current_actor
 from app.api.v1.schemas.documents import (
+    DocumentApproveRequest,
+    DocumentRejectRequest,
     DocumentResponse,
     DocumentUploadRequest,
     DocumentVersionResponse,
@@ -36,12 +38,15 @@ async def create_document(
     actor: CurrentActorDep,
     session: SessionDep,
 ) -> DocumentResponse:
-    document = DocumentService(session).create_document(
+    service = DocumentService(session)
+    result = service.create_document(
         actor=actor,
         case_id=case_id,
         payload=payload,
     )
-    return DocumentResponse.model_validate(document, from_attributes=True)
+    response = DocumentResponse.model_validate(result.document, from_attributes=True)
+    service.process_document_job(job_id=result.job.id)
+    return response
 
 
 @document_router.get("/{document_id}", response_model=DocumentResponse)
@@ -78,12 +83,15 @@ async def create_document_version(
     actor: CurrentActorDep,
     session: SessionDep,
 ) -> DocumentResponse:
-    document = DocumentService(session).create_version(
+    service = DocumentService(session)
+    result = service.create_version(
         actor=actor,
         document_id=document_id,
         payload=payload,
     )
-    return DocumentResponse.model_validate(document, from_attributes=True)
+    response = DocumentResponse.model_validate(result.document, from_attributes=True)
+    service.process_document_job(job_id=result.job.id)
+    return response
 
 
 @document_router.get("/{document_id}/jobs", response_model=list[ProcessingJobResponse])
@@ -94,3 +102,33 @@ async def list_document_jobs(
 ) -> list[ProcessingJobResponse]:
     jobs = DocumentService(session).list_jobs(actor=actor, document_id=document_id)
     return [ProcessingJobResponse.model_validate(job, from_attributes=True) for job in jobs]
+
+
+@document_router.post("/{document_id}/approve", response_model=DocumentResponse)
+async def approve_document(
+    document_id: UUID,
+    payload: DocumentApproveRequest,
+    actor: CurrentActorDep,
+    session: SessionDep,
+) -> DocumentResponse:
+    document = DocumentService(session).approve_document(
+        actor=actor,
+        document_id=document_id,
+        payload=payload,
+    )
+    return DocumentResponse.model_validate(document, from_attributes=True)
+
+
+@document_router.post("/{document_id}/reject", response_model=DocumentResponse)
+async def reject_document(
+    document_id: UUID,
+    payload: DocumentRejectRequest,
+    actor: CurrentActorDep,
+    session: SessionDep,
+) -> DocumentResponse:
+    document = DocumentService(session).reject_document(
+        actor=actor,
+        document_id=document_id,
+        payload=payload,
+    )
+    return DocumentResponse.model_validate(document, from_attributes=True)

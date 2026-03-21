@@ -5,9 +5,14 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.domain.documents.models import DocumentProcessingStatus, DocumentStatus, DocumentType
+from app.domain.documents.models import (
+    DocumentProcessingStatus,
+    DocumentReviewDecision,
+    DocumentStatus,
+    DocumentType,
+)
 from app.domain.jobs.models import ProcessingJobStatus, ProcessingJobType
 
 
@@ -88,4 +93,30 @@ class ProcessingJobResponse(BaseModel):
     scheduled_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    created_at: datetime
+
+
+class DocumentApproveRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=2_000)
+
+
+class DocumentRejectRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=2_000)
+
+    @model_validator(mode="after")
+    def validate_reason(self) -> DocumentRejectRequest:
+        if self.reason is None or not self.reason.strip():
+            msg = "Provide a reason when rejecting a document."
+            raise ValueError(msg)
+        return self
+
+
+class DocumentReviewResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    document_id: UUID
+    reviewer_user_id: UUID
+    decision: DocumentReviewDecision
+    reason: str | None
     created_at: datetime
