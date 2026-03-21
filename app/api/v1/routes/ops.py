@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response, status
 from fastapi.responses import PlainTextResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+from app.infrastructure.db.session import database_is_ready
 
 router = APIRouter()
 
@@ -19,12 +21,16 @@ async def healthcheck(request: Request) -> dict[str, object]:
 
 
 @router.get("/ready", summary="Readiness probe")
-async def readiness(request: Request) -> dict[str, object]:
+async def readiness(request: Request, response: Response) -> dict[str, object]:
+    db_ready = database_is_ready()
+    if not db_ready:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+
     return {
-        "status": "ok",
+        "status": "ok" if db_ready else "degraded",
         "checks": {
             "application": "ok",
-            "database": "pending",
+            "database": "ok" if db_ready else "error",
             "redis": "pending",
         },
     }

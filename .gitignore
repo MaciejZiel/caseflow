@@ -8,7 +8,6 @@
 .ruff_cache/
 .venv/
 __pycache__/
-alembic.ini
 build/
 dist/
 htmlcov/
