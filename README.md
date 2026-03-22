@@ -5,6 +5,7 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 
 - tenant isolation by `organization_id`
 - RBAC for organizations, members, cases, documents and webhooks
+- organization-scoped API keys for system-to-system integrations
 - session-backed auth with refresh rotation, logout and password reset
 - versioned document uploads with processing jobs
 - review workflow for documents
@@ -25,6 +26,7 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - audit log for cases and documents
 - webhook endpoints, HMAC-signed deliveries and delivery history
 - pluggable email delivery backends with local sink and SMTP adapter
+- organization API keys with scoped read-only integration endpoints
 - demo data seeding script for a ready-to-show local environment
 - Alembic migrations and integration tests
 
@@ -41,8 +43,15 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - `POST /api/v1/auth/password-reset/request`
 - `POST /api/v1/auth/password-reset/confirm`
 - `GET /api/v1/me`
+- `POST /api/v1/api-keys`
+- `GET /api/v1/api-keys`
+- `POST /api/v1/api-keys/{api_key_id}/revoke`
 - `POST /api/v1/organizations/current/invitations`
 - `GET /api/v1/organizations/current/members`
+- `GET /api/v1/integrations/cases`
+- `GET /api/v1/integrations/cases/{case_id}`
+- `GET /api/v1/integrations/cases/{case_id}/documents`
+- `GET /api/v1/integrations/documents/{document_id}`
 - `POST /api/v1/cases`
 - `POST /api/v1/cases/{case_id}/comments`
 - `GET /api/v1/cases/{case_id}/audit-log`
@@ -133,6 +142,7 @@ Current verification baseline:
 Integration tests cover:
 
 - auth session lifecycle, device metadata and password reset
+- API key management and tenant-scoped integration access
 - email outbox and local sink delivery
 - demo data seeding
 - auth and invitations
@@ -148,6 +158,8 @@ Integration tests cover:
 - Access tokens are short-lived JWTs bound to persisted auth sessions for immediate logout support.
 - Auth sessions keep stable client metadata, rolling `last_seen_*` activity snapshots and optional
   user-defined device names.
+- API keys are hashed at rest, scoped per organization and exposed through dedicated integration
+  endpoints instead of broad write access to the main app API.
 - Document processing, webhook delivery and outbound emails can run inline for local simplicity or via
   persisted worker queues for asynchronous execution.
 - Webhook deliveries and emails use persisted outbox records with retry scheduling.
@@ -156,4 +168,4 @@ Integration tests cover:
 ## Next High-Value Steps
 
 - deployment-oriented docs and environment hardening
-- API keys and system-to-system integrations
+- reporting, search and export-oriented integration surfaces
