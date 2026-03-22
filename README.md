@@ -32,7 +32,7 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - security headers, trusted host filtering, opt-in proxy header trust and CORS allowlists
 - organization operations summary, failure inspection and scoped retry-due maintenance endpoints
 - retention preview/run endpoints for old delivered webhooks and sent outbound emails
-- platform admin organization directory, tenant health inspection and suspend/reactivate controls
+- platform admin overview, failure feed, retry-due tooling and tenant lifecycle controls
 - demo data seeding script for a ready-to-show local environment
 - Alembic migrations and integration tests
 
@@ -54,8 +54,11 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - `POST /api/v1/api-keys/{api_key_id}/revoke`
 - `GET /api/v1/admin/organizations`
 - `GET /api/v1/admin/organizations/{organization_id}`
+- `GET /api/v1/admin/overview`
+- `GET /api/v1/admin/failures`
 - `POST /api/v1/admin/organizations/{organization_id}/suspend`
 - `POST /api/v1/admin/organizations/{organization_id}/reactivate`
+- `POST /api/v1/admin/retry-due`
 - `GET /api/v1/reports/cases/summary`
 - `GET /api/v1/search/cases`
 - `GET /api/v1/operations/summary`
@@ -168,7 +171,7 @@ Integration tests cover:
 - API key management and tenant-scoped integration access
 - case reporting, search and CSV export
 - operational summary, failures and maintenance retry endpoints
-- platform admin organization oversight and lifecycle controls
+- platform admin overview, failure feed and lifecycle controls
 - retention preview and cleanup controls
 - email outbox and local sink delivery
 - demo data seeding
@@ -195,6 +198,8 @@ Integration tests cover:
   instead of introducing a second execution path.
 - Platform admin endpoints stay explicitly superuser-only and can suspend tenants without leaving
   their existing auth sessions reusable after reactivation.
+- Platform-wide retry uses the same persisted queues as organization-scoped maintenance and the
+  background worker, so operational behavior does not fork between code paths.
 - Retention cleanup is explicit and previewable, so old operational records can be pruned without
   blind deletes.
 - Proxy-derived client metadata is opt-in, while CORS and host filtering stay configuration-driven
