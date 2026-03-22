@@ -1,5 +1,6 @@
 """Model registry imported by Alembic and runtime setup."""
 
+from app.domain.api_keys.models import ApiKey
 from app.domain.audit.models import AuditLog
 from app.domain.auth.models import AuthSession, PasswordResetToken
 from app.domain.cases.models import Case, CaseComment
@@ -15,6 +16,7 @@ def import_model_modules() -> None:
     _ = (
         AuthSession,
         PasswordResetToken,
+        ApiKey,
         Case,
         CaseComment,
         Document,
