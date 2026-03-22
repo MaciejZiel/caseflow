@@ -10,7 +10,8 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - versioned document uploads with processing jobs
 - review workflow for documents
 - audit logs, webhook delivery history and outbound email outbox
-- operational basics: health, readiness, metrics, structured logging, Docker, workers and CI
+- operational basics: health, readiness, metrics, structured logging, Docker, workers, CI and
+  deployment-oriented request hardening
 
 ## Implemented Features
 
@@ -27,6 +28,7 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - webhook endpoints, HMAC-signed deliveries and delivery history
 - pluggable email delivery backends with local sink and SMTP adapter
 - organization API keys with scoped read-only integration endpoints
+- security headers, trusted host filtering, opt-in proxy header trust and CORS allowlists
 - demo data seeding script for a ready-to-show local environment
 - Alembic migrations and integration tests
 
@@ -80,7 +82,10 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 8. Pick delivery modes in `.env` if you want workers or SMTP instead of local inline flows.
 9. Tune `AUTH_SESSION_ACTIVITY_UPDATE_INTERVAL_SECONDS` if you want less or more frequent
    session activity writes.
-10. Run checks with `make lint` and `make test`.
+10. Set `CORS_ALLOWED_ORIGINS` and `TRUSTED_HOST_PATTERNS` as JSON arrays before putting the API
+    behind a real frontend or public ingress.
+11. Enable `TRUST_PROXY_HEADERS` only when the app runs behind a trusted reverse proxy.
+12. Run checks with `make lint` and `make test`.
 
 ## Demo Dataset
 
@@ -160,6 +165,8 @@ Integration tests cover:
   user-defined device names.
 - API keys are hashed at rest, scoped per organization and exposed through dedicated integration
   endpoints instead of broad write access to the main app API.
+- Proxy-derived client metadata is opt-in, while CORS and host filtering stay configuration-driven
+  for deployment safety.
 - Document processing, webhook delivery and outbound emails can run inline for local simplicity or via
   persisted worker queues for asynchronous execution.
 - Webhook deliveries and emails use persisted outbox records with retry scheduling.
@@ -167,5 +174,5 @@ Integration tests cover:
 
 ## Next High-Value Steps
 
-- deployment-oriented docs and environment hardening
 - reporting, search and export-oriented integration surfaces
+- retention policies and admin-level operational tooling
