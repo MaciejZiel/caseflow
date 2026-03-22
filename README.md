@@ -15,7 +15,7 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 
 - organization registration with first owner account
 - JWT login, refresh, logout and password reset
-- auth session listing and per-session revocation
+- auth session listing, per-session revocation, device naming and last-seen activity tracking
 - invitation flow and membership management
 - tenant-scoped case CRUD with archive flow
 - case comments
@@ -36,6 +36,7 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - `POST /api/v1/auth/logout`
 - `POST /api/v1/auth/logout-all`
 - `GET /api/v1/auth/sessions`
+- `PATCH /api/v1/auth/sessions/{session_id}`
 - `DELETE /api/v1/auth/sessions/{session_id}`
 - `POST /api/v1/auth/password-reset/request`
 - `POST /api/v1/auth/password-reset/confirm`
@@ -68,7 +69,9 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 6. Optionally preload a ready-to-demo workspace with `make seed-demo`.
 7. Run the retry worker with `make retry-worker` or a single cycle with `make retry-worker-once`.
 8. Pick delivery modes in `.env` if you want workers or SMTP instead of local inline flows.
-9. Run checks with `make lint` and `make test`.
+9. Tune `AUTH_SESSION_ACTIVITY_UPDATE_INTERVAL_SECONDS` if you want less or more frequent
+   session activity writes.
+10. Run checks with `make lint` and `make test`.
 
 ## Demo Dataset
 
@@ -129,7 +132,7 @@ Current verification baseline:
 
 Integration tests cover:
 
-- auth session lifecycle and password reset
+- auth session lifecycle, device metadata and password reset
 - email outbox and local sink delivery
 - demo data seeding
 - auth and invitations
@@ -143,6 +146,8 @@ Integration tests cover:
 
 - The project uses shared-schema multi-tenancy with explicit query scoping.
 - Access tokens are short-lived JWTs bound to persisted auth sessions for immediate logout support.
+- Auth sessions keep stable client metadata, rolling `last_seen_*` activity snapshots and optional
+  user-defined device names.
 - Document processing, webhook delivery and outbound emails can run inline for local simplicity or via
   persisted worker queues for asynchronous execution.
 - Webhook deliveries and emails use persisted outbox records with retry scheduling.
@@ -150,5 +155,5 @@ Integration tests cover:
 
 ## Next High-Value Steps
 
-- richer session activity tracking and device naming
 - deployment-oriented docs and environment hardening
+- API keys and system-to-system integrations
