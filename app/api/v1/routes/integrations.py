@@ -7,12 +7,14 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps.api_keys import require_api_key
 from app.api.v1.schemas.cases import CaseResponse
 from app.api.v1.schemas.documents import DocumentResponse
 from app.application.services.api_keys import ApiKeyContext, ApiKeyService
+from app.application.services.reporting import ReportingService
 from app.domain.api_keys.models import ApiKeyScope
 from app.domain.cases.models import CaseStatus
 from app.infrastructure.db.session import get_db_session
@@ -28,6 +30,7 @@ LIMIT_QUERY = Query(default=50, ge=1, le=200)
 STATUS_QUERY = Query(default=None)
 EXTERNAL_ID_QUERY = Query(default=None, max_length=120)
 UPDATED_AFTER_QUERY = Query(default=None)
+EXPORT_LIMIT_QUERY = Query(default=1000, ge=1, le=5000)
 
 
 @router.get("/cases", response_model=list[CaseResponse])
@@ -86,3 +89,26 @@ async def get_document(
         document_id=document_id,
     )
     return DocumentResponse.model_validate(document, from_attributes=True)
+
+
+@router.get("/exports/cases.csv", response_class=PlainTextResponse)
+async def export_cases_csv(
+    api_key: CasesApiKeyDep,
+    session: SessionDep,
+    limit: int = EXPORT_LIMIT_QUERY,
+    status: CaseStatus | None = STATUS_QUERY,
+    external_id: str | None = EXTERNAL_ID_QUERY,
+    updated_after: datetime | None = UPDATED_AFTER_QUERY,
+) -> PlainTextResponse:
+    csv_payload = ReportingService(session).export_cases_csv(
+        api_key=api_key,
+        limit=limit,
+        status=status,
+        external_id=external_id,
+        updated_after=updated_after,
+    )
+    return PlainTextResponse(
+        content=csv_payload,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="cases-export.csv"'},
+    )
