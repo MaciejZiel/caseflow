@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 PIP ?= .venv/bin/pip
 
-.PHONY: install lint format test migrate run docker-up docker-down
+.PHONY: install lint format test migrate run seed-demo docker-up docker-down
 
 install:
 	$(PIP) install -e ".[dev]"
@@ -20,6 +20,9 @@ migrate:
 
 run:
 	$(PYTHON) -m uvicorn app.main:app --reload
+
+seed-demo:
+	$(PYTHON) scripts/seed_demo_data.py
 
 docker-up:
 	docker compose up --build
