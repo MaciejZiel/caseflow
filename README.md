@@ -32,6 +32,7 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - security headers, trusted host filtering, opt-in proxy header trust and CORS allowlists
 - organization operations summary, failure inspection and scoped retry-due maintenance endpoints
 - retention preview/run endpoints for old delivered webhooks and sent outbound emails
+- platform admin organization directory, tenant health inspection and suspend/reactivate controls
 - demo data seeding script for a ready-to-show local environment
 - Alembic migrations and integration tests
 
@@ -51,6 +52,10 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - `POST /api/v1/api-keys`
 - `GET /api/v1/api-keys`
 - `POST /api/v1/api-keys/{api_key_id}/revoke`
+- `GET /api/v1/admin/organizations`
+- `GET /api/v1/admin/organizations/{organization_id}`
+- `POST /api/v1/admin/organizations/{organization_id}/suspend`
+- `POST /api/v1/admin/organizations/{organization_id}/reactivate`
 - `GET /api/v1/reports/cases/summary`
 - `GET /api/v1/search/cases`
 - `GET /api/v1/operations/summary`
@@ -163,6 +168,7 @@ Integration tests cover:
 - API key management and tenant-scoped integration access
 - case reporting, search and CSV export
 - operational summary, failures and maintenance retry endpoints
+- platform admin organization oversight and lifecycle controls
 - retention preview and cleanup controls
 - email outbox and local sink delivery
 - demo data seeding
@@ -187,6 +193,8 @@ Integration tests cover:
   record instead of mutating historical delivery state.
 - Maintenance endpoints stay organization-scoped and reuse the same retry machinery as the worker
   instead of introducing a second execution path.
+- Platform admin endpoints stay explicitly superuser-only and can suspend tenants without leaving
+  their existing auth sessions reusable after reactivation.
 - Retention cleanup is explicit and previewable, so old operational records can be pruned without
   blind deletes.
 - Proxy-derived client metadata is opt-in, while CORS and host filtering stay configuration-driven
@@ -198,5 +206,5 @@ Integration tests cover:
 
 ## Next High-Value Steps
 
-- retention policies and admin-level operational tooling
-- admin console / operational endpoints for safer day-2 maintenance
+- internal admin UI for platform operators
+- deeper tenant analytics and anomaly detection
