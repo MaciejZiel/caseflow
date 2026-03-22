@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter
 
+from app.api.v1.routes.admin import router as admin_router
 from app.api.v1.routes.api_keys import router as api_keys_router
 from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.cases import router as cases_router
@@ -14,6 +15,7 @@ from app.api.v1.routes.reporting import reports_router, search_router
 from app.api.v1.routes.webhooks import router as webhooks_router
 
 api_router = APIRouter()
+api_router.include_router(admin_router, tags=["admin"])
 api_router.include_router(api_keys_router, tags=["api-keys"])
 api_router.include_router(auth_router, tags=["auth"])
 api_router.include_router(cases_router, tags=["cases"])

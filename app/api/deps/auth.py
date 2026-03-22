@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.api.request_utils import extract_client_ip, extract_user_agent
 from app.application.actors import ActorContext
 from app.application.services.auth import AuthClientContext, touch_auth_session_activity
-from app.core.errors import AuthenticationError
+from app.core.errors import AuthenticationError, PermissionDeniedError
 from app.domain.auth.models import AuthSession
 from app.domain.organizations.models import OrganizationMembership, OrganizationStatus
 from app.infrastructure.db.session import get_db_session
@@ -24,6 +24,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 CredentialsDep = Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)]
 SessionDep = Annotated[Session, Depends(get_db_session)]
 CurrentActor = ActorContext
+SuperuserActor = ActorContext
 
 async def get_current_actor(
     credentials: CredentialsDep,
@@ -70,6 +71,14 @@ async def get_current_actor(
         membership=auth_session.membership,
         auth_session=auth_session,
     )
+
+
+async def get_current_superuser_actor(
+    actor: Annotated[CurrentActor, Depends(get_current_actor)],
+) -> SuperuserActor:
+    if not actor.user.is_superuser:
+        raise PermissionDeniedError("Only platform admins can access admin endpoints.")
+    return actor
 
 
 def _parse_session_id(payload: dict[str, str]) -> UUID:

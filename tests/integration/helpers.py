@@ -6,11 +6,13 @@ from collections.abc import Sequence
 from contextlib import asynccontextmanager
 
 import httpx
+from sqlalchemy import select
 
 from app.core.config import get_settings
+from app.domain.users.models import User
 from app.infrastructure.db.base import Base
 from app.infrastructure.db.models import import_model_modules
-from app.infrastructure.db.session import get_engine, reset_db_state
+from app.infrastructure.db.session import get_engine, get_session_factory, reset_db_state
 from app.main import create_app
 
 
@@ -27,11 +29,20 @@ def registration_payload(**overrides: str) -> dict[str, str]:
     return payload
 
 
-async def register_owner(async_client: httpx.AsyncClient) -> dict[str, str]:
-    response = await async_client.post("/api/v1/auth/register", json=registration_payload())
+async def register_owner(
+    async_client: httpx.AsyncClient,
+    **overrides: str,
+) -> dict[str, str]:
+    response = await async_client.post(
+        "/api/v1/auth/register",
+        json=registration_payload(**overrides),
+    )
     body = response.json()
     return {
         "access_token": body["access_token"],
+        "refresh_token": body["refresh_token"],
+        "user_id": body["user"]["id"],
+        "email": body["user"]["email"],
         "organization_slug": body["organization"]["slug"],
         "organization_id": body["organization"]["id"],
     }
@@ -87,6 +98,17 @@ async def accept_invitation(
         "status_code": response.status_code,
         "body": response.json(),
     }
+
+
+def promote_user_to_superuser(*, email: str) -> None:
+    session = get_session_factory()()
+    try:
+        user = session.scalar(select(User).where(User.email == email))
+        assert user is not None
+        user.is_superuser = True
+        session.commit()
+    finally:
+        session.close()
 
 
 def encode_document_content(content: bytes) -> str:

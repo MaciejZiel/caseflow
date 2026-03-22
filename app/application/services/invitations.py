@@ -20,7 +20,12 @@ from app.application.services.auth import (
 from app.application.services.emails import EmailOutboxService
 from app.core.config import get_settings
 from app.core.errors import ConflictError, DomainValidationError
-from app.domain.organizations.models import Invitation, OrganizationMembership, OrganizationRole
+from app.domain.organizations.models import (
+    Invitation,
+    OrganizationMembership,
+    OrganizationRole,
+    OrganizationStatus,
+)
 from app.domain.organizations.policies import INVITATION_MANAGER_ROLES, ensure_role_allowed
 from app.domain.users.models import User
 from app.infrastructure.security.invitations import generate_invitation_token, hash_invitation_token
@@ -108,6 +113,11 @@ class InvitationService:
             raise DomainValidationError(
                 "invitation_expired",
                 "This invitation has expired.",
+            )
+        if invitation.organization.status is not OrganizationStatus.ACTIVE:
+            raise DomainValidationError(
+                "organization_inactive",
+                "Invitation cannot be accepted because the organization is not active.",
             )
 
         existing_user = self.session.scalar(select(User).where(User.email == invitation.email))
