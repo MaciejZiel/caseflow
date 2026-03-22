@@ -291,32 +291,37 @@ class DocumentService:
             )
         )
 
-    def process_due_jobs(self, *, limit: int = 50) -> list[UUID]:
+    def process_due_jobs(
+        self,
+        *,
+        limit: int = 50,
+        organization_id: UUID | None = None,
+    ) -> list[UUID]:
         now = datetime.now(UTC)
+        query = select(ProcessingJob.id).where(
+            or_(
+                and_(
+                    ProcessingJob.status == ProcessingJobStatus.QUEUED,
+                    ProcessingJob.scheduled_at <= now,
+                ),
+                and_(
+                    ProcessingJob.status == ProcessingJobStatus.FAILED,
+                    ProcessingJob.next_retry_at.is_not(None),
+                    ProcessingJob.next_retry_at <= now,
+                ),
+            )
+        )
+        if organization_id is not None:
+            query = query.where(ProcessingJob.organization_id == organization_id)
         job_ids = list(
             self.session.scalars(
-                select(ProcessingJob.id)
-                .where(
-                    or_(
-                        and_(
-                            ProcessingJob.status == ProcessingJobStatus.QUEUED,
-                            ProcessingJob.scheduled_at <= now,
-                        ),
-                        and_(
-                            ProcessingJob.status == ProcessingJobStatus.FAILED,
-                            ProcessingJob.next_retry_at.is_not(None),
-                            ProcessingJob.next_retry_at <= now,
-                        ),
-                    )
-                )
-                .order_by(
+                query.order_by(
                     func.coalesce(
                         ProcessingJob.next_retry_at,
                         ProcessingJob.scheduled_at,
                         ProcessingJob.created_at,
                     ).asc()
-                )
-                .limit(limit)
+                ).limit(limit)
             )
         )
         for job_id in job_ids:

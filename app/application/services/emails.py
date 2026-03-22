@@ -111,32 +111,37 @@ class EmailOutboxService:
             return
         self.dispatch_emails(email_ids)
 
-    def process_due_emails(self, *, limit: int = 100) -> list[UUID]:
+    def process_due_emails(
+        self,
+        *,
+        limit: int = 100,
+        organization_id: UUID | None = None,
+    ) -> list[UUID]:
         now = datetime.now(UTC)
+        query = select(OutboundEmail.id).where(
+            or_(
+                and_(
+                    OutboundEmail.status == OutboundEmailStatus.PENDING,
+                    OutboundEmail.scheduled_at <= now,
+                ),
+                and_(
+                    OutboundEmail.status == OutboundEmailStatus.FAILED,
+                    OutboundEmail.next_retry_at.is_not(None),
+                    OutboundEmail.next_retry_at <= now,
+                ),
+            )
+        )
+        if organization_id is not None:
+            query = query.where(OutboundEmail.organization_id == organization_id)
         email_ids = list(
             self.session.scalars(
-                select(OutboundEmail.id)
-                .where(
-                    or_(
-                        and_(
-                            OutboundEmail.status == OutboundEmailStatus.PENDING,
-                            OutboundEmail.scheduled_at <= now,
-                        ),
-                        and_(
-                            OutboundEmail.status == OutboundEmailStatus.FAILED,
-                            OutboundEmail.next_retry_at.is_not(None),
-                            OutboundEmail.next_retry_at <= now,
-                        ),
-                    )
-                )
-                .order_by(
+                query.order_by(
                     func.coalesce(
                         OutboundEmail.next_retry_at,
                         OutboundEmail.scheduled_at,
                         OutboundEmail.created_at,
                     ).asc()
-                )
-                .limit(limit)
+                ).limit(limit)
             )
         )
         self.dispatch_emails(email_ids)

@@ -244,22 +244,30 @@ class WebhookService:
         self.session.refresh(replay_delivery)
         return replay_delivery
 
-    def process_due_deliveries(self, *, limit: int = 100) -> list[UUID]:
+    def process_due_deliveries(
+        self,
+        *,
+        limit: int = 100,
+        organization_id: UUID | None = None,
+    ) -> list[UUID]:
+        query = select(WebhookDelivery.id).where(
+            or_(
+                WebhookDelivery.status == WebhookDeliveryStatus.PENDING,
+                and_(
+                    WebhookDelivery.status == WebhookDeliveryStatus.FAILED,
+                    WebhookDelivery.next_retry_at.is_not(None),
+                    WebhookDelivery.next_retry_at <= datetime.now(UTC),
+                ),
+            )
+        )
+        if organization_id is not None:
+            query = query.where(WebhookDelivery.organization_id == organization_id)
         due_delivery_ids = list(
             self.session.scalars(
-                select(WebhookDelivery.id)
-                .where(
-                    or_(
-                        WebhookDelivery.status == WebhookDeliveryStatus.PENDING,
-                        and_(
-                            WebhookDelivery.status == WebhookDeliveryStatus.FAILED,
-                            WebhookDelivery.next_retry_at.is_not(None),
-                            WebhookDelivery.next_retry_at <= datetime.now(UTC),
-                        ),
-                    )
-                )
-                .order_by(WebhookDelivery.next_retry_at.asc(), WebhookDelivery.created_at.asc())
-                .limit(limit)
+                query.order_by(
+                    WebhookDelivery.next_retry_at.asc(),
+                    WebhookDelivery.created_at.asc(),
+                ).limit(limit)
             )
         )
         for delivery_id in due_delivery_ids:
