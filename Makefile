@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 PIP ?= .venv/bin/pip
 
-.PHONY: install lint format test migrate run seed-demo docker-up docker-down
+.PHONY: install lint format test migrate run seed-demo retry-worker-once retry-worker docker-up docker-down
 
 install:
 	$(PIP) install -e ".[dev]"
@@ -23,6 +23,12 @@ run:
 
 seed-demo:
 	$(PYTHON) scripts/seed_demo_data.py
+
+retry-worker-once:
+	$(PYTHON) scripts/run_retry_worker.py
+
+retry-worker:
+	$(PYTHON) scripts/run_retry_worker.py --loop
 
 docker-up:
 	docker compose up --build

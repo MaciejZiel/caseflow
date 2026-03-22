@@ -8,21 +8,23 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - session-backed auth with refresh rotation, logout and password reset
 - versioned document uploads with processing jobs
 - review workflow for documents
-- audit logs and webhook delivery history
-- operational basics: health, readiness, metrics, structured logging, Docker and CI
+- audit logs, webhook delivery history and outbound email outbox
+- operational basics: health, readiness, metrics, structured logging, Docker, workers and CI
 
 ## Implemented Features
 
 - organization registration with first owner account
 - JWT login, refresh, logout and password reset
+- auth session listing and per-session revocation
 - invitation flow and membership management
 - tenant-scoped case CRUD with archive flow
 - case comments
 - document uploads, versioning and in-process job execution
 - document approve/reject workflow with case status transitions
-- manual retry for failed processing jobs and failed webhook deliveries
+- retry worker for failed processing jobs, webhook deliveries and email outbox messages
 - audit log for cases and documents
 - webhook endpoints, HMAC-signed deliveries and delivery history
+- local email sink for invitations and password reset
 - demo data seeding script for a ready-to-show local environment
 - Alembic migrations and integration tests
 
@@ -33,6 +35,8 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - `POST /api/v1/auth/refresh`
 - `POST /api/v1/auth/logout`
 - `POST /api/v1/auth/logout-all`
+- `GET /api/v1/auth/sessions`
+- `DELETE /api/v1/auth/sessions/{session_id}`
 - `POST /api/v1/auth/password-reset/request`
 - `POST /api/v1/auth/password-reset/confirm`
 - `GET /api/v1/me`
@@ -62,7 +66,8 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 4. Apply migrations with `make migrate`.
 5. Start the API with `make run`.
 6. Optionally preload a ready-to-demo workspace with `make seed-demo`.
-7. Run checks with `make lint` and `make test`.
+7. Run the retry worker with `make retry-worker` or a single cycle with `make retry-worker-once`.
+8. Run checks with `make lint` and `make test`.
 
 ## Demo Dataset
 
@@ -76,6 +81,13 @@ Run `make seed-demo` after migrations to create:
 The script prints a JSON summary with seeded credentials, case references and storage location.
 It refuses to overwrite an existing demo dataset unless you pass `--replace-existing` directly to
 `scripts/seed_demo_data.py`.
+
+## Local Email Sink
+
+Invitation and password reset emails are written to the local sink configured by
+`LOCAL_EMAIL_SINK_PATH` instead of being sent to a real provider.
+This keeps the delivery flow observable in development while preserving an outbox model and retry
+path.
 
 ## Docker
 
@@ -97,29 +109,31 @@ Current verification baseline:
 - `make lint`
 - `make test`
 - `alembic upgrade head` on a clean SQLite database
+- retry worker cycle through `scripts/run_retry_worker.py`
 - GitHub Actions workflow in `.github/workflows/ci.yml` running lint, tests and PostgreSQL migration verification
 
 Integration tests cover:
 
 - auth session lifecycle and password reset
+- email outbox and local sink delivery
 - demo data seeding
 - auth and invitations
 - tenant isolation for cases and documents
 - document processing and review workflow
 - audit log generation
 - webhook delivery success and failure handling
+- worker-driven retries for due failures
 
 ## Current Architecture Notes
 
 - The project uses shared-schema multi-tenancy with explicit query scoping.
 - Access tokens are short-lived JWTs bound to persisted auth sessions for immediate logout support.
 - Document processing is currently implemented as an in-process worker flow to keep the system self-contained.
-- Webhook deliveries are persisted and dispatched synchronously after event publication.
+- Webhook deliveries and emails use persisted outbox records with retry scheduling.
 - Storage uses a local filesystem adapter behind a storage abstraction.
 
 ## Next High-Value Steps
 
-- retry scheduler / dedicated worker process for failed jobs and failed webhook deliveries
-- session listing and per-device revocation UX
-- outbound email delivery for invitations and password reset
+- real provider adapters for email and asynchronous job execution
+- richer session activity tracking and device naming
 - deployment-oriented docs and environment hardening
