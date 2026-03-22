@@ -117,6 +117,92 @@ async def test_case_audit_log_and_webhook_delivery_are_recorded(
 
 
 @pytest.mark.asyncio
+async def test_webhook_endpoint_can_subscribe_only_to_selected_events(
+    async_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_requests: list[dict[str, Any]] = []
+
+    def fake_urlopen(req: Any, timeout: int = 0) -> _FakeWebhookResponse:
+        captured_requests.append(
+            {
+                "data": req.data,
+                "headers": dict(req.header_items()),
+                "url": req.full_url,
+                "timeout": timeout,
+            }
+        )
+        return _FakeWebhookResponse(status=200, body=b'{"ok":true}')
+
+    monkeypatch.setattr(webhook_module.request, "urlopen", fake_urlopen)
+
+    owner = await register_owner(async_client)
+
+    created_endpoint = await async_client.post(
+        "/api/v1/webhooks/endpoints",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+        json={
+            "target_url": "https://selected-events.example.test/webhook",
+            "signing_secret": "selected-events-secret-1234567890",
+            "subscribed_event_types": ["document.approved"],
+        },
+    )
+
+    assert created_endpoint.status_code == 201
+    endpoint_id = created_endpoint.json()["id"]
+    assert created_endpoint.json()["subscribed_event_types"] == ["document.approved"]
+
+    case = await create_case(
+        async_client,
+        access_token=owner["access_token"],
+        title="Filtered webhook case",
+    )
+
+    case_created_deliveries = await async_client.get(
+        "/api/v1/webhooks/deliveries",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+        params={"event_type": "case.created", "endpoint_id": endpoint_id},
+    )
+
+    assert case_created_deliveries.status_code == 200
+    assert case_created_deliveries.json() == []
+
+    created_document = await async_client.post(
+        f"/api/v1/cases/{case['id']}/documents",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+        json={
+            "title": "Selectable event document",
+            "document_type": "contract",
+            "original_filename": "selectable.txt",
+            "mime_type": "text/plain",
+            "content_base64": encode_document_content(b"selectable"),
+        },
+    )
+    document_id = created_document.json()["id"]
+
+    approved_document = await async_client.post(
+        f"/api/v1/documents/{document_id}/approve",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+        json={"reason": "Selected event only."},
+    )
+
+    assert approved_document.status_code == 200
+
+    approved_deliveries = await async_client.get(
+        "/api/v1/webhooks/deliveries",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+        params={"event_type": "document.approved", "endpoint_id": endpoint_id},
+    )
+
+    assert approved_deliveries.status_code == 200
+    assert len(approved_deliveries.json()) == 1
+    assert approved_deliveries.json()[0]["event_type"] == "document.approved"
+    assert len(captured_requests) == 1
+    delivered_body = json.loads(captured_requests[0]["data"].decode("utf-8"))
+    assert delivered_body["event_type"] == "document.approved"
+
+
+@pytest.mark.asyncio
 async def test_document_audit_log_and_failed_webhook_delivery_are_recorded(
     async_client: httpx.AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -245,6 +331,79 @@ async def test_failed_webhook_delivery_can_be_retried_manually(
     assert retried.json()["status"] == "delivered"
     assert retried.json()["attempts"] == 2
     assert retried.json()["http_status"] == 200
+
+
+@pytest.mark.asyncio
+async def test_webhook_delivery_can_be_replayed_as_new_delivery(
+    async_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_requests: list[dict[str, Any]] = []
+
+    def fake_urlopen(req: Any, timeout: int = 0) -> _FakeWebhookResponse:
+        captured_requests.append(
+            {
+                "data": req.data,
+                "headers": dict(req.header_items()),
+                "url": req.full_url,
+                "timeout": timeout,
+            }
+        )
+        return _FakeWebhookResponse(status=200, body=b'{"ok":true}')
+
+    monkeypatch.setattr(webhook_module.request, "urlopen", fake_urlopen)
+
+    owner = await register_owner(async_client)
+    created_endpoint = await async_client.post(
+        "/api/v1/webhooks/endpoints",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+        json={
+            "target_url": "https://replayable.example.test/webhook",
+            "signing_secret": "replayable-secret-1234567890",
+        },
+    )
+
+    assert created_endpoint.status_code == 201
+
+    await create_case(
+        async_client,
+        access_token=owner["access_token"],
+        title="Replayable webhook case",
+    )
+
+    deliveries = await async_client.get(
+        "/api/v1/webhooks/deliveries",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+        params={"event_type": "case.created"},
+    )
+
+    assert deliveries.status_code == 200
+    original_delivery = deliveries.json()[0]
+    assert original_delivery["status"] == "delivered"
+    assert len(captured_requests) == 1
+
+    replayed = await async_client.post(
+        f"/api/v1/webhooks/deliveries/{original_delivery['id']}/replay",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+    )
+
+    assert replayed.status_code == 200
+    replayed_body = replayed.json()
+    assert replayed_body["id"] != original_delivery["id"]
+    assert replayed_body["replayed_from_delivery_id"] == original_delivery["id"]
+    assert replayed_body["status"] == "delivered"
+    assert replayed_body["attempts"] == 1
+    assert len(captured_requests) == 2
+
+    deliveries_after_replay = await async_client.get(
+        "/api/v1/webhooks/deliveries",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+        params={"event_type": "case.created"},
+    )
+
+    assert deliveries_after_replay.status_code == 200
+    delivery_ids = [item["id"] for item in deliveries_after_replay.json()]
+    assert replayed_body["id"] in delivery_ids
 
 
 @pytest.mark.asyncio

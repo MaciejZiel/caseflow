@@ -53,6 +53,7 @@ class WebhookService:
             organization_id=actor.organization.id,
             target_url=payload.target_url,
             signing_secret=payload.signing_secret or secrets.token_urlsafe(32),
+            subscribed_event_types_json=payload.subscribed_event_types,
             is_active=payload.is_active,
             created_by=actor.user.id,
         )
@@ -66,6 +67,7 @@ class WebhookService:
             entity_id=endpoint.id,
             new_values={
                 "target_url": endpoint.target_url,
+                "subscribed_event_types": endpoint.subscribed_event_types_json,
                 "is_active": endpoint.is_active,
             },
             deliver_webhooks=False,
@@ -98,12 +100,15 @@ class WebhookService:
 
         old_values = {
             "target_url": endpoint.target_url,
+            "subscribed_event_types": endpoint.subscribed_event_types_json,
             "is_active": endpoint.is_active,
         }
         if payload.target_url is not None:
             endpoint.target_url = payload.target_url
         if payload.signing_secret is not None:
             endpoint.signing_secret = payload.signing_secret
+        if payload.subscribed_event_types is not None:
+            endpoint.subscribed_event_types_json = payload.subscribed_event_types
         if payload.is_active is not None:
             endpoint.is_active = payload.is_active
 
@@ -116,6 +121,7 @@ class WebhookService:
             old_values=old_values,
             new_values={
                 "target_url": endpoint.target_url,
+                "subscribed_event_types": endpoint.subscribed_event_types_json,
                 "is_active": endpoint.is_active,
             },
             deliver_webhooks=False,
@@ -130,6 +136,7 @@ class WebhookService:
         actor: ActorContext,
         status: WebhookDeliveryStatus | None,
         event_type: str | None,
+        endpoint_id: UUID | None,
         limit: int,
         offset: int,
     ) -> list[WebhookDelivery]:
@@ -145,6 +152,8 @@ class WebhookService:
             query = query.where(WebhookDelivery.status == status)
         if event_type is not None:
             query = query.where(WebhookDelivery.event_type == event_type)
+        if endpoint_id is not None:
+            query = query.where(WebhookDelivery.endpoint_id == endpoint_id)
         return list(self.session.scalars(query))
 
     def dispatch_deliveries(self, delivery_ids: list[UUID]) -> None:
@@ -197,6 +206,43 @@ class WebhookService:
         self.dispatch_deliveries([delivery.id])
         self.session.refresh(delivery)
         return delivery
+
+    def replay_delivery(
+        self,
+        *,
+        actor: ActorContext,
+        delivery_id: UUID,
+    ) -> WebhookDelivery:
+        self._ensure_manage_permission(actor)
+        source_delivery = self.session.scalar(
+            select(WebhookDelivery).where(
+                WebhookDelivery.id == delivery_id,
+                WebhookDelivery.organization_id == actor.organization.id,
+            )
+        )
+        if source_delivery is None:
+            raise NotFoundError("webhook_delivery", "Webhook delivery does not exist.")
+        endpoint = self._get_endpoint_for_actor(
+            actor=actor,
+            endpoint_id=source_delivery.endpoint_id,
+        )
+        if endpoint is None:
+            raise NotFoundError("webhook_endpoint", "Webhook endpoint does not exist.")
+
+        replay_delivery = WebhookDelivery(
+            organization_id=source_delivery.organization_id,
+            endpoint_id=source_delivery.endpoint_id,
+            event_type=source_delivery.event_type,
+            status=WebhookDeliveryStatus.PENDING,
+            request_body_json=source_delivery.request_body_json,
+            replayed_from_delivery_id=source_delivery.id,
+        )
+        self.session.add(replay_delivery)
+        self.session.commit()
+        self.session.refresh(replay_delivery)
+        self.dispatch_enqueued_deliveries([replay_delivery.id])
+        self.session.refresh(replay_delivery)
+        return replay_delivery
 
     def process_due_deliveries(self, *, limit: int = 100) -> list[UUID]:
         due_delivery_ids = list(

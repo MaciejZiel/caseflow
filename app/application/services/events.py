@@ -70,6 +70,9 @@ class EventPublisher:
 
         delivery_ids: list[UUID] = []
         for endpoint in endpoints:
+            subscribed_event_types = set(endpoint.subscribed_event_types_json or [])
+            if subscribed_event_types and event_type not in subscribed_event_types:
+                continue
             delivery_id = uuid4()
             delivery = WebhookDelivery(
                 id=delivery_id,
