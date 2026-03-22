@@ -13,6 +13,8 @@ from app.api.deps.auth import SuperuserActor, get_current_superuser_actor
 from app.api.v1.schemas.admin import (
     AdminAnomalyResponse,
     AdminAuditEventResponse,
+    AdminBulkOrganizationStatusChangeRequest,
+    AdminBulkOrganizationStatusChangeResponse,
     AdminFailureResponse,
     AdminOrganizationDetailResponse,
     AdminOrganizationListItemResponse,
@@ -249,6 +251,42 @@ async def list_organization_activity(
         since=since,
     )
     return [AuditLogResponse.model_validate(item, from_attributes=True) for item in activity]
+
+
+@router.post(
+    "/organizations/bulk-status",
+    response_model=AdminBulkOrganizationStatusChangeResponse,
+)
+async def bulk_change_organization_status(
+    payload: AdminBulkOrganizationStatusChangeRequest,
+    actor: SuperuserActorDep,
+    session: SessionDep,
+) -> AdminBulkOrganizationStatusChangeResponse:
+    result = AdminService(session).bulk_change_organization_status(
+        actor=actor,
+        organization_ids=payload.organization_ids,
+        action=payload.action,
+        reason=payload.reason,
+    )
+    return AdminBulkOrganizationStatusChangeResponse(
+        action=result.action,
+        total_requested=result.total_requested,
+        updated_count=result.updated_count,
+        failed_count=result.failed_count,
+        results=[
+            {
+                "organization_id": item.organization_id,
+                "organization_slug": item.organization_slug,
+                "outcome": item.outcome,
+                "previous_status": item.previous_status,
+                "current_status": item.current_status,
+                "revoked_auth_sessions": item.revoked_auth_sessions,
+                "error_code": item.error_code,
+                "error_message": item.error_message,
+            }
+            for item in result.results
+        ],
+    )
 
 
 @router.post(

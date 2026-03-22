@@ -80,6 +80,52 @@ class AdminOrganizationStatusChangeResponse(BaseModel):
     reason: str | None
 
 
+class AdminBulkOrganizationStatusChangeRequest(BaseModel):
+    organization_ids: list[UUID] = Field(min_length=1, max_length=100)
+    action: str
+    reason: str | None = Field(default=None, max_length=500)
+
+    @field_validator("organization_ids")
+    @classmethod
+    def ensure_unique_organization_ids(cls, value: list[UUID]) -> list[UUID]:
+        return list(dict.fromkeys(value))
+
+    @field_validator("action")
+    @classmethod
+    def validate_action(cls, value: str) -> str:
+        if value not in {"suspend", "reactivate"}:
+            msg = "Action must be suspend or reactivate."
+            raise ValueError(msg)
+        return value
+
+    @field_validator("reason", mode="before")
+    @classmethod
+    def normalize_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.split()).strip()
+        return normalized or None
+
+
+class AdminBulkOrganizationStatusChangeItemResponse(BaseModel):
+    organization_id: UUID
+    organization_slug: str | None
+    outcome: str
+    previous_status: OrganizationStatus | None
+    current_status: OrganizationStatus | None
+    revoked_auth_sessions: int
+    error_code: str | None
+    error_message: str | None
+
+
+class AdminBulkOrganizationStatusChangeResponse(BaseModel):
+    action: str
+    total_requested: int
+    updated_count: int
+    failed_count: int
+    results: list[AdminBulkOrganizationStatusChangeItemResponse]
+
+
 class AdminOverviewResponse(BaseModel):
     total_organizations: int
     organizations_by_status: dict[str, int]

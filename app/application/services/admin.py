@@ -16,7 +16,12 @@ from app.application.services.events import EventPublisher
 from app.application.services.operations import OperationsFailureItem
 from app.application.services.webhooks import WebhookService
 from app.core.config import get_settings
-from app.core.errors import DomainValidationError, NotFoundError, PermissionDeniedError
+from app.core.errors import (
+    CaseFlowError,
+    DomainValidationError,
+    NotFoundError,
+    PermissionDeniedError,
+)
 from app.domain.api_keys.models import ApiKey
 from app.domain.audit.models import AuditLog
 from app.domain.auth.models import AuthSession
@@ -125,6 +130,27 @@ class AdminAnomalyItem:
     summary: str
     detected_at: datetime
     metadata: dict[str, object]
+
+
+@dataclass(slots=True)
+class AdminBulkOrganizationStatusChangeItem:
+    organization_id: UUID
+    organization_slug: str | None
+    outcome: str
+    previous_status: OrganizationStatus | None
+    current_status: OrganizationStatus | None
+    revoked_auth_sessions: int
+    error_code: str | None
+    error_message: str | None
+
+
+@dataclass(slots=True)
+class AdminBulkOrganizationStatusChangeResult:
+    action: str
+    total_requested: int
+    updated_count: int
+    failed_count: int
+    results: list[AdminBulkOrganizationStatusChangeItem]
 
 
 class AdminService:
@@ -606,6 +632,71 @@ class AdminService:
             query = query.where(AuditLog.created_at >= since)
         return list(
             self.session.scalars(query.order_by(AuditLog.created_at.desc()).limit(limit))
+        )
+
+    def bulk_change_organization_status(
+        self,
+        *,
+        actor: ActorContext,
+        organization_ids: list[UUID],
+        action: str,
+        reason: str | None,
+    ) -> AdminBulkOrganizationStatusChangeResult:
+        self._ensure_superuser(actor)
+        results: list[AdminBulkOrganizationStatusChangeItem] = []
+        updated_count = 0
+
+        for organization_id in organization_ids:
+            try:
+                if action == "suspend":
+                    outcome = self.suspend_organization(
+                        actor=actor,
+                        organization_id=organization_id,
+                        reason=reason,
+                    )
+                else:
+                    outcome = self.reactivate_organization(
+                        actor=actor,
+                        organization_id=organization_id,
+                        reason=reason,
+                    )
+            except CaseFlowError as exc:
+                self.session.rollback()
+                organization = self.session.get(Organization, organization_id)
+                results.append(
+                    AdminBulkOrganizationStatusChangeItem(
+                        organization_id=organization_id,
+                        organization_slug=organization.slug if organization is not None else None,
+                        outcome="failed",
+                        previous_status=organization.status if organization is not None else None,
+                        current_status=organization.status if organization is not None else None,
+                        revoked_auth_sessions=0,
+                        error_code=exc.code,
+                        error_message=exc.message,
+                    )
+                )
+                continue
+
+            updated_count += 1
+            results.append(
+                AdminBulkOrganizationStatusChangeItem(
+                    organization_id=outcome.organization.id,
+                    organization_slug=outcome.organization.slug,
+                    outcome="updated",
+                    previous_status=outcome.previous_status,
+                    current_status=outcome.current_status,
+                    revoked_auth_sessions=outcome.revoked_auth_sessions,
+                    error_code=None,
+                    error_message=None,
+                )
+            )
+
+        return AdminBulkOrganizationStatusChangeResult(
+            action=action,
+            total_requested=len(organization_ids),
+            updated_count=updated_count,
+            failed_count=len(organization_ids) - updated_count,
+            results=results,
         )
 
     def suspend_organization(

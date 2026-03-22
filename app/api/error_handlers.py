@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -32,13 +34,13 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:  # pragma: no cover - exercised through integration tests
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content={
                 "error": {
                     "code": "validation_error",
                     "message": "Request validation failed.",
                     "request_id": request.state.request_id,
-                    "details": exc.errors(),
+                    "details": _json_safe(exc.errors()),
                 }
             },
         )
@@ -78,3 +80,13 @@ def register_exception_handlers(app: FastAPI) -> None:
                 }
             },
         )
+
+
+def _json_safe(value):
+    if isinstance(value, BaseException):
+        return str(value)
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
+        return [_json_safe(item) for item in value]
+    return value
