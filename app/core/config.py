@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     app_env: str = Field(default="local", alias="APP_ENV")
     debug: bool = Field(default=True, alias="DEBUG")
     api_v1_prefix: str = Field(default="/api/v1", alias="API_V1_PREFIX")
+    cors_allowed_origins: list[str] = Field(default_factory=list, alias="CORS_ALLOWED_ORIGINS")
+    trusted_host_patterns: list[str] = Field(default_factory=list, alias="TRUSTED_HOST_PATTERNS")
+    trust_proxy_headers: bool = Field(default=False, alias="TRUST_PROXY_HEADERS")
+    security_headers_enabled: bool = Field(default=True, alias="SECURITY_HEADERS_ENABLED")
+    security_hsts_max_age_seconds: int = Field(default=0, alias="SECURITY_HSTS_MAX_AGE_SECONDS")
 
     database_url: str = Field(
         default="postgresql+psycopg://caseflow:caseflow@localhost:5432/caseflow",
@@ -71,6 +76,15 @@ class Settings(BaseSettings):
     smtp_use_ssl: bool = Field(default=False, alias="SMTP_USE_SSL")
     smtp_timeout_seconds: int = Field(default=10, alias="SMTP_TIMEOUT_SECONDS")
     max_upload_size_bytes: int = Field(default=10 * 1024 * 1024, alias="MAX_UPLOAD_SIZE_BYTES")
+
+    @field_validator("cors_allowed_origins", "trusted_host_patterns", mode="before")
+    @classmethod
+    def parse_csv_settings(cls, value: str | list[str] | None) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return value
 
 
 @lru_cache

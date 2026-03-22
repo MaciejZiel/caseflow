@@ -3,8 +3,15 @@ from __future__ import annotations
 import asyncio
 import base64
 from collections.abc import Sequence
+from contextlib import asynccontextmanager
 
 import httpx
+
+from app.core.config import get_settings
+from app.infrastructure.db.base import Base
+from app.infrastructure.db.models import import_model_modules
+from app.infrastructure.db.session import get_engine, reset_db_state
+from app.main import create_app
 
 
 def registration_payload(**overrides: str) -> dict[str, str]:
@@ -84,6 +91,44 @@ async def accept_invitation(
 
 def encode_document_content(content: bytes) -> str:
     return base64.b64encode(content).decode("ascii")
+
+
+@asynccontextmanager
+async def configured_async_client(
+    tmp_path,
+    monkeypatch,
+    *,
+    env_overrides: dict[str, str] | None = None,
+):
+    database_path = tmp_path / "caseflow-configured-test.db"
+    env_values = {
+        "DATABASE_URL": f"sqlite+pysqlite:///{database_path}",
+        "TEST_DATABASE_URL": f"sqlite+pysqlite:///{database_path}",
+        "SECRET_KEY": "test-secret-key-with-32-plus-bytes",
+        "LOCAL_STORAGE_PATH": str(tmp_path / "storage"),
+        "LOCAL_EMAIL_SINK_PATH": str(tmp_path / "emails"),
+    }
+    if env_overrides:
+        env_values.update(env_overrides)
+    for key, value in env_values.items():
+        monkeypatch.setenv(key, value)
+
+    get_settings.cache_clear()
+    reset_db_state()
+    import_model_modules()
+
+    engine = get_engine()
+    Base.metadata.create_all(bind=engine)
+
+    app = create_app()
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        yield client
+
+    Base.metadata.drop_all(bind=engine)
+    engine.dispose()
+    reset_db_state()
+    get_settings.cache_clear()
 
 
 async def wait_for_document_status(

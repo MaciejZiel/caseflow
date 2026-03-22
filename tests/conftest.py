@@ -18,6 +18,7 @@ async def async_client(tmp_path, monkeypatch) -> httpx.AsyncClient:
     monkeypatch.setenv("SECRET_KEY", "test-secret-key-with-32-plus-bytes")
     monkeypatch.setenv("LOCAL_STORAGE_PATH", str(tmp_path / "storage"))
     monkeypatch.setenv("LOCAL_EMAIL_SINK_PATH", str(tmp_path / "emails"))
+    monkeypatch.setenv("TRUST_PROXY_HEADERS", "true")
 
     get_settings.cache_clear()
     reset_db_state()

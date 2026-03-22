@@ -11,6 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
+from app.api.request_utils import extract_client_ip, extract_user_agent
 from app.application.actors import ActorContext
 from app.application.services.auth import AuthClientContext, touch_auth_session_activity
 from app.core.errors import AuthenticationError
@@ -79,14 +80,9 @@ def _parse_session_id(payload: dict[str, str]) -> UUID:
 
 
 def build_auth_client_context(request: Request) -> AuthClientContext:
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    client_ip = forwarded_for.split(",", maxsplit=1)[0].strip() if forwarded_for else None
-    if client_ip is None and request.client is not None:
-        client_ip = request.client.host
-    user_agent = request.headers.get("User-Agent")
     return AuthClientContext(
-        client_ip=client_ip or None,
-        user_agent=user_agent.strip() if user_agent else None,
+        client_ip=extract_client_ip(request),
+        user_agent=extract_user_agent(request),
     )
 
 

@@ -9,6 +9,7 @@ from fastapi import Depends, Request
 from fastapi.security import APIKeyHeader
 from sqlalchemy.orm import Session
 
+from app.api.request_utils import extract_client_ip
 from app.application.services.api_keys import ApiKeyContext, ApiKeyService
 from app.domain.api_keys.models import ApiKeyScope
 from app.infrastructure.db.session import get_db_session
@@ -30,16 +31,8 @@ def require_api_key(*required_scopes: ApiKeyScope) -> Callable[..., ApiKeyContex
             raise AuthenticationError("API key was not provided.")
         return ApiKeyService(session).authenticate_api_key(
             raw_key=raw_key.strip(),
-            client_ip=_extract_client_ip(request),
+            client_ip=extract_client_ip(request),
             required_scopes=set(required_scopes),
         )
 
     return dependency
-
-
-def _extract_client_ip(request: Request) -> str | None:
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    client_ip = forwarded_for.split(",", maxsplit=1)[0].strip() if forwarded_for else None
-    if client_ip is None and request.client is not None:
-        client_ip = request.client.host
-    return client_ip or None
