@@ -339,3 +339,45 @@ async def test_reviewer_can_reject_ready_document(async_client: httpx.AsyncClien
 
     assert fetched_case.status_code == 200
     assert fetched_case.json()["status"] == "rejected"
+
+
+@pytest.mark.asyncio
+async def test_failed_processing_job_can_be_retried_manually(
+    async_client: httpx.AsyncClient,
+) -> None:
+    owner = await register_owner(async_client)
+    case = await create_case(async_client, access_token=owner["access_token"])
+
+    created = await async_client.post(
+        f"/api/v1/cases/{case['id']}/documents",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+        json={
+            "title": "Broken payload",
+            "document_type": "other",
+            "original_filename": "broken.txt",
+            "mime_type": "text/plain",
+            "content_base64": encode_document_content(b"FAIL_PROCESSING: invalid payload"),
+        },
+    )
+
+    assert created.status_code == 201
+    document_id = created.json()["id"]
+
+    jobs = await async_client.get(
+        f"/api/v1/documents/{document_id}/jobs",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+    )
+
+    assert jobs.status_code == 200
+    assert jobs.json()[0]["status"] == "failed"
+    assert jobs.json()[0]["attempts"] == 1
+
+    retried = await async_client.post(
+        f"/api/v1/documents/{document_id}/jobs/{jobs.json()[0]['id']}/retry",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+    )
+
+    assert retried.status_code == 200
+    assert retried.json()["status"] == "failed"
+    assert retried.json()["attempts"] == 2
+    assert retried.json()["last_error"] is not None

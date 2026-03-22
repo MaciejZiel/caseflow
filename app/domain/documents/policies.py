@@ -29,3 +29,10 @@ DOCUMENT_REVIEW_ROLES = frozenset(
         OrganizationRole.REVIEWER,
     }
 )
+DOCUMENT_RETRY_ROLES = frozenset(
+    {
+        OrganizationRole.OWNER,
+        OrganizationRole.ADMIN,
+        OrganizationRole.MANAGER,
+    }
+)

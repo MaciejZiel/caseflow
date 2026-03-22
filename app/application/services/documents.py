@@ -34,6 +34,7 @@ from app.domain.documents.models import (
 )
 from app.domain.documents.policies import (
     DOCUMENT_READ_ROLES,
+    DOCUMENT_RETRY_ROLES,
     DOCUMENT_REVIEW_ROLES,
     DOCUMENT_WRITE_ROLES,
 )
@@ -412,6 +413,57 @@ class DocumentService:
         self.session.commit()
         WebhookService(self.session).dispatch_deliveries(delivery_ids)
 
+    def retry_job(
+        self,
+        *,
+        actor: ActorContext,
+        document_id: UUID,
+        job_id: UUID,
+    ) -> ProcessingJob:
+        ensure_role_allowed(
+            actor.membership.role,
+            allowed_roles=DOCUMENT_RETRY_ROLES,
+            message="Your role cannot retry document processing jobs.",
+        )
+        self.get_document(actor=actor, document_id=document_id)
+        job = self.session.scalar(
+            select(ProcessingJob).where(
+                ProcessingJob.id == job_id,
+                ProcessingJob.document_id == document_id,
+                ProcessingJob.organization_id == actor.organization.id,
+            )
+        )
+        if job is None:
+            raise NotFoundError("processing_job", "Processing job does not exist.")
+        if job.status not in {ProcessingJobStatus.FAILED, ProcessingJobStatus.DEAD_LETTERED}:
+            raise DomainValidationError(
+                "processing_job_retry_forbidden",
+                "Only failed or dead-lettered jobs can be retried.",
+            )
+
+        document = self._get_document_for_actor(actor=actor, document_id=document_id)
+        version = self.session.scalar(
+            select(DocumentVersion).where(
+                DocumentVersion.id == job.document_version_id,
+                DocumentVersion.organization_id == actor.organization.id,
+            )
+        )
+        if document is None or version is None:
+            raise NotFoundError("document", "Document does not exist.")
+
+        document.status = DocumentStatus.QUEUED
+        version.processing_status = DocumentProcessingStatus.QUEUED
+        job.status = ProcessingJobStatus.QUEUED
+        job.last_error = None
+        job.started_at = None
+        job.finished_at = None
+        job.scheduled_at = datetime.now(UTC)
+        self.session.commit()
+
+        self.process_document_job(job_id=job.id)
+        self.session.refresh(job)
+        return job
+
     def _build_processing_job(
         self,
         *,
@@ -667,6 +719,11 @@ class DocumentService:
         content: bytes,
         version: DocumentVersion,
     ) -> dict[str, object]:
+        if content.startswith(b"FAIL_PROCESSING"):
+            raise DomainValidationError(
+                "document_processing_simulated_failure",
+                "Document processing failed because the payload was marked as invalid.",
+            )
         preview_text = content[:200].decode("utf-8", errors="replace").strip()
         preview_lines = [line for line in preview_text.splitlines() if line]
         return {

@@ -106,6 +106,24 @@ async def list_document_jobs(
     return [ProcessingJobResponse.model_validate(job, from_attributes=True) for job in jobs]
 
 
+@document_router.post(
+    "/{document_id}/jobs/{job_id}/retry",
+    response_model=ProcessingJobResponse,
+)
+async def retry_document_job(
+    document_id: UUID,
+    job_id: UUID,
+    actor: CurrentActorDep,
+    session: SessionDep,
+) -> ProcessingJobResponse:
+    job = DocumentService(session).retry_job(
+        actor=actor,
+        document_id=document_id,
+        job_id=job_id,
+    )
+    return ProcessingJobResponse.model_validate(job, from_attributes=True)
+
+
 @document_router.get("/{document_id}/audit-log", response_model=list[AuditLogResponse])
 async def list_document_audit_log(
     document_id: UUID,

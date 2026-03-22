@@ -89,3 +89,13 @@ async def list_webhook_deliveries(
         WebhookDeliveryResponse.model_validate(delivery, from_attributes=True)
         for delivery in deliveries
     ]
+
+
+@router.post("/deliveries/{delivery_id}/retry", response_model=WebhookDeliveryResponse)
+async def retry_webhook_delivery(
+    delivery_id: UUID,
+    actor: CurrentActorDep,
+    session: SessionDep,
+) -> WebhookDeliveryResponse:
+    delivery = WebhookService(session).retry_delivery(actor=actor, delivery_id=delivery_id)
+    return WebhookDeliveryResponse.model_validate(delivery, from_attributes=True)

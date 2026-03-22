@@ -20,7 +20,7 @@ from app.api.v1.schemas.webhooks import (
 )
 from app.application.actors import ActorContext
 from app.application.services.events import EventPublisher
-from app.core.errors import NotFoundError
+from app.core.errors import DomainValidationError, NotFoundError
 from app.domain.organizations.models import OrganizationRole
 from app.domain.organizations.policies import ensure_role_allowed
 from app.domain.webhooks.models import WebhookDelivery, WebhookDeliveryStatus, WebhookEndpoint
@@ -163,6 +163,36 @@ class WebhookService:
             if endpoint is None:
                 continue
             self._dispatch_single_delivery(delivery=delivery, endpoint=endpoint)
+
+    def retry_delivery(
+        self,
+        *,
+        actor: ActorContext,
+        delivery_id: UUID,
+    ) -> WebhookDelivery:
+        self._ensure_manage_permission(actor)
+        delivery = self.session.scalar(
+            select(WebhookDelivery).where(
+                WebhookDelivery.id == delivery_id,
+                WebhookDelivery.organization_id == actor.organization.id,
+            )
+        )
+        if delivery is None:
+            raise NotFoundError("webhook_delivery", "Webhook delivery does not exist.")
+        if delivery.status != WebhookDeliveryStatus.FAILED:
+            raise DomainValidationError(
+                "webhook_delivery_retry_forbidden",
+                "Only failed webhook deliveries can be retried.",
+            )
+
+        delivery.status = WebhookDeliveryStatus.PENDING
+        delivery.http_status = None
+        delivery.response_body_excerpt = None
+        delivery.next_retry_at = None
+        self.session.commit()
+        self.dispatch_deliveries([delivery.id])
+        self.session.refresh(delivery)
+        return delivery
 
     def _dispatch_single_delivery(
         self,

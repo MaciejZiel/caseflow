@@ -189,3 +189,57 @@ async def test_document_audit_log_and_failed_webhook_delivery_are_recorded(
     assert failed_deliveries.json()[0]["status"] == "failed"
     assert failed_deliveries.json()[0]["next_retry_at"] is not None
     assert failed_deliveries.json()[0]["response_body_excerpt"] is not None
+
+
+@pytest.mark.asyncio
+async def test_failed_webhook_delivery_can_be_retried_manually(
+    async_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    should_fail = True
+
+    def fake_urlopen(req: Any, timeout: int = 0) -> _FakeWebhookResponse:
+        if should_fail:
+            raise error.URLError("connection refused")
+        return _FakeWebhookResponse(status=200, body=b'{"ok":true}')
+
+    monkeypatch.setattr(webhook_module.request, "urlopen", fake_urlopen)
+
+    owner = await register_owner(async_client)
+    created_endpoint = await async_client.post(
+        "/api/v1/webhooks/endpoints",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+        json={
+            "target_url": "https://retry.example.test/webhook",
+            "signing_secret": "retry-secret-1234567890",
+        },
+    )
+
+    assert created_endpoint.status_code == 201
+
+    await create_case(
+        async_client,
+        access_token=owner["access_token"],
+        title="Retryable webhook case",
+    )
+
+    failed_deliveries = await async_client.get(
+        "/api/v1/webhooks/deliveries",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+        params={"event_type": "case.created", "status": "failed"},
+    )
+
+    assert failed_deliveries.status_code == 200
+    assert len(failed_deliveries.json()) == 1
+    delivery_id = failed_deliveries.json()[0]["id"]
+
+    should_fail = False
+    retried = await async_client.post(
+        f"/api/v1/webhooks/deliveries/{delivery_id}/retry",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+    )
+
+    assert retried.status_code == 200
+    assert retried.json()["status"] == "delivered"
+    assert retried.json()["attempts"] == 2
+    assert retried.json()["http_status"] == 200
