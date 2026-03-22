@@ -30,6 +30,7 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - organization API keys with scoped read-only integration endpoints
 - case summary reporting, case search and CSV export surfaces
 - security headers, trusted host filtering, opt-in proxy header trust and CORS allowlists
+- organization operations summary, failure inspection and scoped retry-due maintenance endpoints
 - demo data seeding script for a ready-to-show local environment
 - Alembic migrations and integration tests
 
@@ -51,6 +52,9 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - `POST /api/v1/api-keys/{api_key_id}/revoke`
 - `GET /api/v1/reports/cases/summary`
 - `GET /api/v1/search/cases`
+- `GET /api/v1/operations/summary`
+- `GET /api/v1/operations/failures`
+- `POST /api/v1/operations/retry-due`
 - `POST /api/v1/organizations/current/invitations`
 - `GET /api/v1/organizations/current/members`
 - `GET /api/v1/integrations/cases`
@@ -155,6 +159,7 @@ Integration tests cover:
 - auth session lifecycle, device metadata and password reset
 - API key management and tenant-scoped integration access
 - case reporting, search and CSV export
+- operational summary, failures and maintenance retry endpoints
 - email outbox and local sink delivery
 - demo data seeding
 - auth and invitations
@@ -176,6 +181,8 @@ Integration tests cover:
   second analytics datastore too early.
 - Webhook endpoints can subscribe to selected event types, while replay creates a fresh delivery
   record instead of mutating historical delivery state.
+- Maintenance endpoints stay organization-scoped and reuse the same retry machinery as the worker
+  instead of introducing a second execution path.
 - Proxy-derived client metadata is opt-in, while CORS and host filtering stay configuration-driven
   for deployment safety.
 - Document processing, webhook delivery and outbound emails can run inline for local simplicity or via
