@@ -28,6 +28,7 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - webhook endpoints, HMAC-signed deliveries and delivery history
 - pluggable email delivery backends with local sink and SMTP adapter
 - organization API keys with scoped read-only integration endpoints
+- case summary reporting, case search and CSV export surfaces
 - security headers, trusted host filtering, opt-in proxy header trust and CORS allowlists
 - demo data seeding script for a ready-to-show local environment
 - Alembic migrations and integration tests
@@ -48,11 +49,14 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - `POST /api/v1/api-keys`
 - `GET /api/v1/api-keys`
 - `POST /api/v1/api-keys/{api_key_id}/revoke`
+- `GET /api/v1/reports/cases/summary`
+- `GET /api/v1/search/cases`
 - `POST /api/v1/organizations/current/invitations`
 - `GET /api/v1/organizations/current/members`
 - `GET /api/v1/integrations/cases`
 - `GET /api/v1/integrations/cases/{case_id}`
 - `GET /api/v1/integrations/cases/{case_id}/documents`
+- `GET /api/v1/integrations/exports/cases.csv`
 - `GET /api/v1/integrations/documents/{document_id}`
 - `POST /api/v1/cases`
 - `POST /api/v1/cases/{case_id}/comments`
@@ -148,6 +152,7 @@ Integration tests cover:
 
 - auth session lifecycle, device metadata and password reset
 - API key management and tenant-scoped integration access
+- case reporting, search and CSV export
 - email outbox and local sink delivery
 - demo data seeding
 - auth and invitations
@@ -165,6 +170,8 @@ Integration tests cover:
   user-defined device names.
 - API keys are hashed at rest, scoped per organization and exposed through dedicated integration
   endpoints instead of broad write access to the main app API.
+- Reporting and search stay tenant-scoped and reuse the same domain model instead of creating a
+  second analytics datastore too early.
 - Proxy-derived client metadata is opt-in, while CORS and host filtering stay configuration-driven
   for deployment safety.
 - Document processing, webhook delivery and outbound emails can run inline for local simplicity or via
@@ -174,5 +181,5 @@ Integration tests cover:
 
 ## Next High-Value Steps
 
-- reporting, search and export-oriented integration surfaces
 - retention policies and admin-level operational tooling
+- richer webhook subscription filtering and event replay tooling
