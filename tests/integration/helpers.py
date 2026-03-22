@@ -6,10 +6,9 @@ from collections.abc import Sequence
 from contextlib import asynccontextmanager
 
 import httpx
-from sqlalchemy import select
 
+from app.application.services.superusers import SuperuserService
 from app.core.config import get_settings
-from app.domain.users.models import User
 from app.infrastructure.db.base import Base
 from app.infrastructure.db.models import import_model_modules
 from app.infrastructure.db.session import get_engine, get_session_factory, reset_db_state
@@ -103,10 +102,10 @@ async def accept_invitation(
 def promote_user_to_superuser(*, email: str) -> None:
     session = get_session_factory()()
     try:
-        user = session.scalar(select(User).where(User.email == email))
-        assert user is not None
-        user.is_superuser = True
-        session.commit()
+        SuperuserService(session).set_superuser_status(
+            email=email,
+            is_superuser=True,
+        )
     finally:
         session.close()
 
