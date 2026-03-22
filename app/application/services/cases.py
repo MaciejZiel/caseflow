@@ -9,12 +9,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.v1.schemas.cases import CaseCreateRequest, CaseUpdateRequest
+from app.api.v1.schemas.cases import CaseCommentCreateRequest, CaseCreateRequest, CaseUpdateRequest
 from app.application.actors import ActorContext
 from app.application.services.events import EventPublisher
 from app.application.services.webhooks import WebhookService
 from app.core.errors import ConflictError, DomainValidationError, NotFoundError
-from app.domain.cases.models import Case, CasePriority, CaseStatus
+from app.domain.cases.models import Case, CaseComment, CasePriority, CaseStatus
 from app.domain.cases.policies import CASE_READ_ROLES, CASE_WRITE_ROLES
 from app.domain.organizations.models import OrganizationMembership
 from app.domain.organizations.policies import ensure_role_allowed
@@ -224,6 +224,57 @@ class CaseService:
         self.session.refresh(case)
         WebhookService(self.session).dispatch_deliveries(delivery_ids)
         return case
+
+    def create_comment(
+        self,
+        *,
+        actor: ActorContext,
+        case_id: UUID,
+        payload: CaseCommentCreateRequest,
+    ) -> CaseComment:
+        case = self.get_case(actor=actor, case_id=case_id)
+        if case.archived_at is not None:
+            raise DomainValidationError(
+                "archived_case_comment_forbidden",
+                "Archived cases cannot accept new comments.",
+            )
+
+        comment = CaseComment(
+            organization_id=actor.organization.id,
+            case_id=case.id,
+            author_user_id=actor.user.id,
+            body=payload.body.strip(),
+        )
+        self.session.add(comment)
+        self.session.flush()
+        delivery_ids = self.publisher.record_event(
+            organization_id=actor.organization.id,
+            actor_user_id=actor.user.id,
+            event_type="case.comment_created",
+            entity_type="case",
+            entity_id=case.id,
+            metadata={
+                "comment_id": comment.id,
+                "body_excerpt": comment.body[:200],
+            },
+        )
+        self.session.commit()
+        self.session.refresh(comment)
+        WebhookService(self.session).dispatch_deliveries(delivery_ids)
+        return comment
+
+    def list_comments(self, *, actor: ActorContext, case_id: UUID) -> list[CaseComment]:
+        self.get_case(actor=actor, case_id=case_id)
+        return list(
+            self.session.scalars(
+                select(CaseComment)
+                .where(
+                    CaseComment.case_id == case_id,
+                    CaseComment.organization_id == actor.organization.id,
+                )
+                .order_by(CaseComment.created_at.asc())
+            )
+        )
 
     def _get_case_for_actor(self, *, actor: ActorContext, case_id: UUID) -> Case | None:
         return self.session.scalar(

@@ -10,7 +10,13 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.auth import CurrentActor, get_current_actor
 from app.api.v1.schemas.audit import AuditLogResponse
-from app.api.v1.schemas.cases import CaseCreateRequest, CaseResponse, CaseUpdateRequest
+from app.api.v1.schemas.cases import (
+    CaseCommentCreateRequest,
+    CaseCommentResponse,
+    CaseCreateRequest,
+    CaseResponse,
+    CaseUpdateRequest,
+)
 from app.application.services.audit import AuditService
 from app.application.services.cases import CaseService
 from app.domain.cases.models import CasePriority, CaseStatus
@@ -87,6 +93,38 @@ async def archive_case(
 ) -> CaseResponse:
     case = CaseService(session).archive_case(actor=actor, case_id=case_id)
     return CaseResponse.model_validate(case, from_attributes=True)
+
+
+@router.post(
+    "/{case_id}/comments",
+    response_model=CaseCommentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_case_comment(
+    case_id: UUID,
+    payload: CaseCommentCreateRequest,
+    actor: CurrentActorDep,
+    session: SessionDep,
+) -> CaseCommentResponse:
+    comment = CaseService(session).create_comment(
+        actor=actor,
+        case_id=case_id,
+        payload=payload,
+    )
+    return CaseCommentResponse.model_validate(comment, from_attributes=True)
+
+
+@router.get("/{case_id}/comments", response_model=list[CaseCommentResponse])
+async def list_case_comments(
+    case_id: UUID,
+    actor: CurrentActorDep,
+    session: SessionDep,
+) -> list[CaseCommentResponse]:
+    comments = CaseService(session).list_comments(actor=actor, case_id=case_id)
+    return [
+        CaseCommentResponse.model_validate(comment, from_attributes=True)
+        for comment in comments
+    ]
 
 
 @router.get("/{case_id}/audit-log", response_model=list[AuditLogResponse])

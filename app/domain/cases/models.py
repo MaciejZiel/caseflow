@@ -52,3 +52,18 @@ class Case(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     created_by: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     due_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CaseComment(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "case_comments"
+
+    organization_id: Mapped[UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        index=True,
+    )
+    case_id: Mapped[UUID] = mapped_column(
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        index=True,
+    )
+    author_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
+    body: Mapped[str] = mapped_column(Text)

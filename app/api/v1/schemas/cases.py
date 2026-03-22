@@ -65,3 +65,18 @@ class CaseResponse(BaseModel):
     archived_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class CaseCommentCreateRequest(BaseModel):
+    body: str = Field(min_length=1, max_length=5_000)
+
+
+class CaseCommentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    case_id: UUID
+    author_user_id: UUID
+    body: str
+    created_at: datetime
+    updated_at: datetime
