@@ -6,12 +6,13 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.application.actors import ActorContext
+from app.application.services.auth import AuthClientContext, touch_auth_session_activity
 from app.core.errors import AuthenticationError
 from app.domain.auth.models import AuthSession
 from app.domain.organizations.models import OrganizationMembership, OrganizationStatus
@@ -26,6 +27,7 @@ CurrentActor = ActorContext
 async def get_current_actor(
     credentials: CredentialsDep,
     session: SessionDep,
+    request: Request,
 ) -> CurrentActor:
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise AuthenticationError("Authentication credentials were not provided.")
@@ -58,6 +60,10 @@ async def get_current_actor(
     if auth_session.organization.status is not OrganizationStatus.ACTIVE:
         raise AuthenticationError("Authentication context is invalid or no longer active.")
 
+    client_context = build_auth_client_context(request)
+    if touch_auth_session_activity(auth_session, client_context=client_context):
+        session.commit()
+
     return CurrentActor(
         user=auth_session.user,
         membership=auth_session.membership,
@@ -70,6 +76,18 @@ def _parse_session_id(payload: dict[str, str]) -> UUID:
     if raw_session_id is None:
         raise AuthenticationError("Authentication context is invalid or no longer active.")
     return UUID(raw_session_id)
+
+
+def build_auth_client_context(request: Request) -> AuthClientContext:
+    forwarded_for = request.headers.get("X-Forwarded-For")
+    client_ip = forwarded_for.split(",", maxsplit=1)[0].strip() if forwarded_for else None
+    if client_ip is None and request.client is not None:
+        client_ip = request.client.host
+    user_agent = request.headers.get("User-Agent")
+    return AuthClientContext(
+        client_ip=client_ip or None,
+        user_agent=user_agent.strip() if user_agent else None,
+    )
 
 
 def _to_utc(value):

@@ -283,17 +283,27 @@ async def test_auth_sessions_list_shows_current_session_metadata(
 
     listed_sessions = await async_client.get(
         "/api/v1/auth/sessions",
-        headers={"Authorization": f"Bearer {second_session['access_token']}"},
+        headers={
+            "Authorization": f"Bearer {second_session['access_token']}",
+            "User-Agent": "CaseFlowMobile/2.0",
+            "X-Forwarded-For": "198.51.100.25",
+        },
     )
 
     assert listed_sessions.status_code == 200
     sessions = listed_sessions.json()
     assert len(sessions) == 2
     assert sessions[0]["is_current"] is True
+    assert sessions[0]["display_name"] == "CaseFlow Mobile"
+    assert sessions[0]["device_name"] is None
     assert sessions[0]["user_agent"] == "CaseFlowMobile/2.0"
     assert sessions[0]["client_ip"] == "198.51.100.25"
+    assert sessions[0]["last_seen_user_agent"] == "CaseFlowMobile/2.0"
+    assert sessions[0]["last_seen_ip"] == "198.51.100.25"
+    assert sessions[0]["last_seen_at"] is not None
     assert sessions[0]["role"] == "owner"
     assert sessions[1]["is_current"] is False
+    assert sessions[1]["display_name"] == "CaseFlow Browser"
     assert sessions[1]["user_agent"] == "CaseFlowBrowser/1.0"
     assert sessions[1]["client_ip"] == "203.0.113.10"
     assert first_session["refresh_token"] != second_session["refresh_token"]
@@ -343,3 +353,76 @@ async def test_revoke_specific_session_invalidates_only_target_session(
         headers={"Authorization": f"Bearer {second_session['access_token']}"},
     )
     assert current_me.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_authenticated_requests_update_session_activity_snapshot(
+    async_client: httpx.AsyncClient,
+) -> None:
+    registered = await async_client.post(
+        "/api/v1/auth/register",
+        json=registration_payload(),
+        headers={"User-Agent": "CaseFlowBrowser/1.0", "X-Forwarded-For": "203.0.113.10"},
+    )
+    access_token = registered.json()["access_token"]
+
+    me_response = await async_client.get(
+        "/api/v1/me",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": "CaseFlowTablet/3.0",
+            "X-Forwarded-For": "198.51.100.88",
+        },
+    )
+    assert me_response.status_code == 200
+
+    sessions_response = await async_client.get(
+        "/api/v1/auth/sessions",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": "CaseFlowTablet/3.0",
+            "X-Forwarded-For": "198.51.100.88",
+        },
+    )
+
+    assert sessions_response.status_code == 200
+    session = sessions_response.json()[0]
+    assert session["display_name"] == "CaseFlow Browser"
+    assert session["user_agent"] == "CaseFlowBrowser/1.0"
+    assert session["client_ip"] == "203.0.113.10"
+    assert session["last_seen_user_agent"] == "CaseFlowTablet/3.0"
+    assert session["last_seen_ip"] == "198.51.100.88"
+    assert session["last_seen_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_auth_session_device_name_can_be_updated(
+    async_client: httpx.AsyncClient,
+) -> None:
+    registered = await async_client.post("/api/v1/auth/register", json=registration_payload())
+    access_token = registered.json()["access_token"]
+
+    listed_sessions = await async_client.get(
+        "/api/v1/auth/sessions",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    session_id = listed_sessions.json()[0]["id"]
+
+    update_response = await async_client.patch(
+        f"/api/v1/auth/sessions/{session_id}",
+        json={"device_name": "Ada main browser"},
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert update_response.status_code == 200
+    updated_session = update_response.json()
+    assert updated_session["device_name"] == "Ada main browser"
+    assert updated_session["display_name"] == "Ada main browser"
+
+    sessions_response = await async_client.get(
+        "/api/v1/auth/sessions",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert sessions_response.status_code == 200
+    assert sessions_response.json()[0]["device_name"] == "Ada main browser"

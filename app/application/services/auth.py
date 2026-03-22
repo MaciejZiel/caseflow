@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
@@ -238,10 +238,40 @@ class AuthService:
                 .where(AuthSession.user_id == user.id)
                 .order_by(
                     AuthSession.revoked_at.is_not(None).asc(),
+                    func.coalesce(
+                        AuthSession.last_seen_at,
+                        AuthSession.last_refreshed_at,
+                        AuthSession.created_at,
+                    ).desc(),
                     AuthSession.created_at.desc(),
                 )
             )
         )
+
+    def update_session_device_name(
+        self,
+        *,
+        user: User,
+        session_id: UUID,
+        device_name: str | None,
+    ) -> AuthSession:
+        auth_session = self.session.scalar(
+            select(AuthSession)
+            .options(
+                joinedload(AuthSession.organization),
+                joinedload(AuthSession.membership),
+            )
+            .where(
+                AuthSession.id == session_id,
+                AuthSession.user_id == user.id,
+            )
+        )
+        if auth_session is None:
+            raise NotFoundError("auth_session", "Authentication session does not exist.")
+        auth_session.device_name = device_name
+        self.session.commit()
+        self.session.refresh(auth_session)
+        return auth_session
 
     def revoke_session(
         self,
@@ -449,15 +479,19 @@ def create_auth_session(
 ) -> tuple[AuthSession, str]:
     settings = settings or get_settings()
     refresh_token = generate_opaque_token()
+    issued_at = datetime.now(UTC)
     auth_session = AuthSession(
         user=user,
         organization=organization,
         membership=membership,
         refresh_token_hash=hash_opaque_token(refresh_token),
-        refresh_token_expires_at=datetime.now(UTC)
-        + timedelta(days=settings.refresh_token_ttl_days),
+        refresh_token_expires_at=issued_at + timedelta(days=settings.refresh_token_ttl_days),
+        device_name=None,
         client_ip=client_context.client_ip if client_context else None,
         user_agent=client_context.user_agent if client_context else None,
+        last_seen_at=issued_at,
+        last_seen_ip=client_context.client_ip if client_context else None,
+        last_seen_user_agent=client_context.user_agent if client_context else None,
     )
     return auth_session, refresh_token
 
@@ -469,16 +503,108 @@ def rotate_auth_session(
     client_context: AuthClientContext | None = None,
 ) -> str:
     settings = settings or get_settings()
+    now = datetime.now(UTC)
     refresh_token = generate_opaque_token()
     auth_session.refresh_token_hash = hash_opaque_token(refresh_token)
-    auth_session.refresh_token_expires_at = datetime.now(UTC) + timedelta(
-        days=settings.refresh_token_ttl_days
-    )
-    auth_session.last_refreshed_at = datetime.now(UTC)
+    auth_session.refresh_token_expires_at = now + timedelta(days=settings.refresh_token_ttl_days)
+    auth_session.last_refreshed_at = now
     if client_context is not None:
         auth_session.client_ip = client_context.client_ip
         auth_session.user_agent = client_context.user_agent
+    touch_auth_session_activity(
+        auth_session,
+        client_context=client_context,
+        settings=settings,
+        now=now,
+        force=True,
+    )
     return refresh_token
+
+
+def touch_auth_session_activity(
+    auth_session: AuthSession,
+    *,
+    client_context: AuthClientContext | None,
+    settings=None,
+    now: datetime | None = None,
+    force: bool = False,
+) -> bool:
+    if client_context is None:
+        return False
+
+    settings = settings or get_settings()
+    now = now or datetime.now(UTC)
+    if not force and not _should_update_auth_session_activity(
+        auth_session=auth_session,
+        client_context=client_context,
+        settings=settings,
+        now=now,
+    ):
+        return False
+
+    auth_session.last_seen_at = now
+    auth_session.last_seen_ip = client_context.client_ip
+    auth_session.last_seen_user_agent = client_context.user_agent
+    return True
+
+
+def resolve_auth_session_display_name(auth_session: AuthSession) -> str:
+    if auth_session.device_name:
+        return auth_session.device_name
+    return infer_device_name(auth_session.user_agent or auth_session.last_seen_user_agent)
+
+
+def infer_device_name(user_agent: str | None) -> str:
+    if user_agent is None or not user_agent.strip():
+        return "Unknown Device"
+
+    normalized = user_agent.lower()
+    known_names = {
+        "caseflowbrowser": "CaseFlow Browser",
+        "caseflowmobile": "CaseFlow Mobile",
+        "caseflowtablet": "CaseFlow Tablet",
+        "caseflowcli": "CaseFlow CLI",
+        "postmanruntime": "Postman",
+        "curl/": "curl",
+    }
+    for marker, display_name in known_names.items():
+        if marker in normalized:
+            return display_name
+
+    if "iphone" in normalized:
+        return "iPhone"
+    if "ipad" in normalized:
+        return "iPad"
+    if "android" in normalized and "mobile" in normalized:
+        return "Android Phone"
+    if "android" in normalized:
+        return "Android Device"
+    if "windows" in normalized:
+        return "Windows Device"
+    if "mac os x" in normalized or "macintosh" in normalized:
+        return "macOS Device"
+    if "linux" in normalized:
+        return "Linux Device"
+
+    return user_agent.split(" ", maxsplit=1)[0].split("/", maxsplit=1)[0]
+
+
+def _should_update_auth_session_activity(
+    *,
+    auth_session: AuthSession,
+    client_context: AuthClientContext,
+    settings,
+    now: datetime,
+) -> bool:
+    if auth_session.last_seen_at is None:
+        return True
+    if client_context.client_ip != auth_session.last_seen_ip:
+        return True
+    if client_context.user_agent != auth_session.last_seen_user_agent:
+        return True
+    return _to_utc(auth_session.last_seen_at) <= now - timedelta(
+        seconds=settings.auth_session_activity_update_interval_seconds
+    )
 
 
 def _to_utc(value: datetime) -> datetime:

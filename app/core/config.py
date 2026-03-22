@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     access_token_ttl_minutes: int = Field(default=15, alias="ACCESS_TOKEN_TTL_MINUTES")
     refresh_token_ttl_days: int = Field(default=30, alias="REFRESH_TOKEN_TTL_DAYS")
     password_reset_ttl_minutes: int = Field(default=30, alias="PASSWORD_RESET_TTL_MINUTES")
+    auth_session_activity_update_interval_seconds: int = Field(
+        default=60,
+        alias="AUTH_SESSION_ACTIVITY_UPDATE_INTERVAL_SECONDS",
+    )
     document_processing_mode: Literal["inline", "worker"] = Field(
         default="inline",
         alias="DOCUMENT_PROCESSING_MODE",

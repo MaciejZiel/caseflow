@@ -68,6 +68,18 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str = Field(min_length=20, max_length=512)
 
 
+class AuthSessionUpdateRequest(BaseModel):
+    device_name: str | None = Field(default=None, max_length=120)
+
+    @field_validator("device_name", mode="before")
+    @classmethod
+    def normalize_device_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = " ".join(value.split()).strip()
+        return normalized or None
+
+
 class PasswordResetRequest(BaseModel):
     email: str
 
@@ -149,8 +161,13 @@ class AuthSessionInfoResponse(BaseModel):
     id: UUID
     organization: SessionOrganizationSummaryResponse
     role: OrganizationRole
+    device_name: str | None
+    display_name: str
     client_ip: str | None
     user_agent: str | None
+    last_seen_at: datetime | None
+    last_seen_ip: str | None
+    last_seen_user_agent: str | None
     refresh_token_expires_at: datetime
     last_refreshed_at: datetime | None
     revoked_at: datetime | None
