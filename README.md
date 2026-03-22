@@ -19,12 +19,12 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - invitation flow and membership management
 - tenant-scoped case CRUD with archive flow
 - case comments
-- document uploads, versioning and in-process job execution
+- document uploads, versioning and configurable inline-or-worker job execution
 - document approve/reject workflow with case status transitions
 - retry worker for failed processing jobs, webhook deliveries and email outbox messages
 - audit log for cases and documents
 - webhook endpoints, HMAC-signed deliveries and delivery history
-- local email sink for invitations and password reset
+- pluggable email delivery backends with local sink and SMTP adapter
 - demo data seeding script for a ready-to-show local environment
 - Alembic migrations and integration tests
 
@@ -67,7 +67,8 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 5. Start the API with `make run`.
 6. Optionally preload a ready-to-demo workspace with `make seed-demo`.
 7. Run the retry worker with `make retry-worker` or a single cycle with `make retry-worker-once`.
-8. Run checks with `make lint` and `make test`.
+8. Pick delivery modes in `.env` if you want workers or SMTP instead of local inline flows.
+9. Run checks with `make lint` and `make test`.
 
 ## Demo Dataset
 
@@ -84,10 +85,24 @@ It refuses to overwrite an existing demo dataset unless you pass `--replace-exis
 
 ## Local Email Sink
 
-Invitation and password reset emails are written to the local sink configured by
-`LOCAL_EMAIL_SINK_PATH` instead of being sent to a real provider.
-This keeps the delivery flow observable in development while preserving an outbox model and retry
-path.
+Invitation and password reset emails go through the persisted outbox and can be delivered with:
+
+- `EMAIL_DELIVERY_BACKEND=local` writing JSON payloads to `LOCAL_EMAIL_SINK_PATH`
+- `EMAIL_DELIVERY_BACKEND=smtp` using `SMTP_*` settings for real delivery
+
+`EMAIL_DELIVERY_MODE=sync` sends immediately during the request path.
+`EMAIL_DELIVERY_MODE=worker` leaves messages pending for the retry worker.
+
+## Worker Modes
+
+CaseFlow can run synchronously for a simple local setup or defer side effects to the worker:
+
+- `DOCUMENT_PROCESSING_MODE=inline|worker`
+- `WEBHOOK_DELIVERY_MODE=sync|worker`
+- `EMAIL_DELIVERY_MODE=sync|worker`
+
+When a `worker` mode is enabled, records are persisted first and processed by
+`scripts/run_retry_worker.py` / `make retry-worker`.
 
 ## Docker
 
@@ -128,12 +143,12 @@ Integration tests cover:
 
 - The project uses shared-schema multi-tenancy with explicit query scoping.
 - Access tokens are short-lived JWTs bound to persisted auth sessions for immediate logout support.
-- Document processing is currently implemented as an in-process worker flow to keep the system self-contained.
+- Document processing, webhook delivery and outbound emails can run inline for local simplicity or via
+  persisted worker queues for asynchronous execution.
 - Webhook deliveries and emails use persisted outbox records with retry scheduling.
 - Storage uses a local filesystem adapter behind a storage abstraction.
 
 ## Next High-Value Steps
 
-- real provider adapters for email and asynchronous job execution
 - richer session activity tracking and device naming
 - deployment-oriented docs and environment hardening
