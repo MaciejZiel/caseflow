@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: caseflow
+          POSTGRES_USER: caseflow
+          POSTGRES_PASSWORD: caseflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U caseflow -d caseflow"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+psycopg://caseflow:caseflow@127.0.0.1:5432/caseflow
+      TEST_DATABASE_URL: sqlite+pysqlite:///:memory:
+      SECRET_KEY: ci-secret-key-with-32-plus-bytes
+      LOCAL_STORAGE_PATH: ./.tmp/storage
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Prepare runtime directories
+        run: mkdir -p ./.tmp/storage
+
+      - name: Lint
+        run: python -m ruff check .
+
+      - name: Run test suite
+        run: python -m pytest
+
+      - name: Verify migrations on PostgreSQL
+        run: python -m alembic upgrade head
