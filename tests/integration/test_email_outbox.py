@@ -9,6 +9,7 @@ import httpx
 import pytest
 from sqlalchemy import select
 
+from app.core.config import get_settings
 from app.domain.emails.models import OutboundEmail
 from app.infrastructure.db.session import get_session_factory
 from app.workers.retries import run_retry_cycle
@@ -48,14 +49,17 @@ async def test_password_reset_request_writes_email_and_token_can_be_used(
     async_client: httpx.AsyncClient,
     tmp_path: Path,
 ) -> None:
-    await async_client.post("/api/v1/auth/register", json={
-        "organization_name": "Acme Claims",
-        "organization_slug": "acme-claims",
-        "first_name": "Ada",
-        "last_name": "Lovelace",
-        "email": "ada@example.com",
-        "password": "StrongPass123",
-    })
+    await async_client.post(
+        "/api/v1/auth/register",
+        json={
+            "organization_name": "Acme Claims",
+            "organization_slug": "acme-claims",
+            "first_name": "Ada",
+            "last_name": "Lovelace",
+            "email": "ada@example.com",
+            "password": "StrongPass123",
+        },
+    )
 
     reset_requested = await async_client.post(
         "/api/v1/auth/password-reset/request",
@@ -131,3 +135,94 @@ async def test_retry_worker_processes_failed_email_delivery(
         assert email.next_retry_at is None
     finally:
         session.close()
+
+
+@pytest.mark.asyncio
+async def test_smtp_backend_sends_email_via_smtp_adapter(
+    async_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent_messages: list[dict[str, str]] = []
+
+    class _FakeSMTP:
+        def __init__(self, host: str, port: int, timeout: int) -> None:
+            assert host == "smtp.example.test"
+            assert port == 2525
+            assert timeout == 10
+
+        def __enter__(self) -> _FakeSMTP:
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
+            return False
+
+        def starttls(self) -> None:
+            return None
+
+        def login(self, username: str, password: str) -> None:
+            assert username == "smtp-user"
+            assert password == "smtp-pass"
+
+        def send_message(self, message) -> None:
+            sent_messages.append(
+                {
+                    "subject": str(message["Subject"]),
+                    "to": str(message["To"]),
+                    "from": str(message["From"]),
+                    "body": message.get_content(),
+                }
+            )
+
+    monkeypatch.setenv("EMAIL_DELIVERY_BACKEND", "smtp")
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.test")
+    monkeypatch.setenv("SMTP_PORT", "2525")
+    monkeypatch.setenv("SMTP_USERNAME", "smtp-user")
+    monkeypatch.setenv("SMTP_PASSWORD", "smtp-pass")
+    monkeypatch.setenv("SMTP_FROM_EMAIL", "no-reply@example.test")
+    monkeypatch.setenv("SMTP_FROM_NAME", "CaseFlow Notifications")
+    get_settings.cache_clear()
+    monkeypatch.setattr("app.infrastructure.email.smtp.smtplib.SMTP", _FakeSMTP)
+
+    owner = await register_owner(async_client)
+    invitation = await create_invitation(
+        async_client,
+        access_token=owner["access_token"],
+        email="smtp-invitee@example.com",
+        role="member",
+    )
+
+    assert invitation["invitation"]["email"] == "smtp-invitee@example.com"
+    assert len(sent_messages) == 1
+    assert sent_messages[0]["to"] == "smtp-invitee@example.com"
+    assert sent_messages[0]["from"] == "CaseFlow Notifications <no-reply@example.test>"
+    assert invitation["invitation_token"] in sent_messages[0]["body"]
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_email_worker_mode_defers_initial_delivery_until_retry_worker(
+    async_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("EMAIL_DELIVERY_MODE", "worker")
+    get_settings.cache_clear()
+
+    owner = await register_owner(async_client)
+    invitation = await create_invitation(
+        async_client,
+        access_token=owner["access_token"],
+        email="worker-invitee@example.com",
+        role="reviewer",
+    )
+
+    assert invitation["invitation"]["email"] == "worker-invitee@example.com"
+    assert _read_email_sink_files(tmp_path / "emails") == []
+
+    result = run_retry_cycle(limit_per_queue=10)
+    assert result.processed_emails == 1
+
+    email_payloads = _read_email_sink_files(tmp_path / "emails")
+    assert len(email_payloads) == 1
+    assert email_payloads[0]["recipient_email"] == "worker-invitee@example.com"
+    get_settings.cache_clear()

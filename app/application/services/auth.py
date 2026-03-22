@@ -294,7 +294,7 @@ class AuthService:
             expires_at=expires_at,
         )
         self.session.commit()
-        EmailOutboxService(self.session).dispatch_emails([email.id])
+        EmailOutboxService(self.session).dispatch_enqueued_emails([email.id])
         return OperationStatusResult(status="accepted")
 
     def confirm_password_reset(

@@ -80,7 +80,7 @@ class InvitationService:
         )
         self.session.commit()
         self.session.refresh(invitation)
-        EmailOutboxService(self.session).dispatch_emails([email.id])
+        EmailOutboxService(self.session).dispatch_enqueued_emails([email.id])
         return InvitationCreateResult(invitation=invitation, invitation_token=raw_token)
 
     def accept_invitation(

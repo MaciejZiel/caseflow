@@ -13,7 +13,7 @@ from app.core.config import get_settings
 from app.domain.emails.models import OutboundEmail, OutboundEmailStatus
 from app.domain.organizations.models import Invitation, Organization
 from app.domain.users.models import User
-from app.infrastructure.email.local import LocalEmailSink
+from app.infrastructure.email import EmailDeliveryBackend, resolve_email_backend
 
 
 @dataclass(slots=True)
@@ -31,11 +31,11 @@ class EmailOutboxService:
         self,
         session: Session,
         *,
-        sink: LocalEmailSink | None = None,
+        sink: EmailDeliveryBackend | None = None,
     ) -> None:
         self.session = session
         self.settings = get_settings()
-        self.sink = sink or LocalEmailSink()
+        self.sink = sink or resolve_email_backend()
 
     def enqueue_invitation_email(
         self,
@@ -105,6 +105,11 @@ class EmailOutboxService:
         )
         for email in emails:
             self._deliver_email(email)
+
+    def dispatch_enqueued_emails(self, email_ids: list[UUID]) -> None:
+        if self.settings.email_delivery_mode != "sync":
+            return
+        self.dispatch_emails(email_ids)
 
     def process_due_emails(self, *, limit: int = 100) -> list[UUID]:
         now = datetime.now(UTC)

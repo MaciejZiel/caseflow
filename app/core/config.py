@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -27,6 +28,22 @@ class Settings(BaseSettings):
     access_token_ttl_minutes: int = Field(default=15, alias="ACCESS_TOKEN_TTL_MINUTES")
     refresh_token_ttl_days: int = Field(default=30, alias="REFRESH_TOKEN_TTL_DAYS")
     password_reset_ttl_minutes: int = Field(default=30, alias="PASSWORD_RESET_TTL_MINUTES")
+    document_processing_mode: Literal["inline", "worker"] = Field(
+        default="inline",
+        alias="DOCUMENT_PROCESSING_MODE",
+    )
+    webhook_delivery_mode: Literal["sync", "worker"] = Field(
+        default="sync",
+        alias="WEBHOOK_DELIVERY_MODE",
+    )
+    email_delivery_mode: Literal["sync", "worker"] = Field(
+        default="sync",
+        alias="EMAIL_DELIVERY_MODE",
+    )
+    email_delivery_backend: Literal["local", "smtp"] = Field(
+        default="local",
+        alias="EMAIL_DELIVERY_BACKEND",
+    )
     job_retry_base_delay_seconds: int = Field(default=30, alias="JOB_RETRY_BASE_DELAY_SECONDS")
     webhook_retry_base_delay_seconds: int = Field(
         default=30,
@@ -40,6 +57,15 @@ class Settings(BaseSettings):
         default=Path("./.tmp/emails"),
         alias="LOCAL_EMAIL_SINK_PATH",
     )
+    smtp_host: str | None = Field(default=None, alias="SMTP_HOST")
+    smtp_port: int = Field(default=587, alias="SMTP_PORT")
+    smtp_username: str | None = Field(default=None, alias="SMTP_USERNAME")
+    smtp_password: str | None = Field(default=None, alias="SMTP_PASSWORD")
+    smtp_from_email: str = Field(default="no-reply@caseflow.local", alias="SMTP_FROM_EMAIL")
+    smtp_from_name: str = Field(default="CaseFlow", alias="SMTP_FROM_NAME")
+    smtp_use_starttls: bool = Field(default=True, alias="SMTP_USE_STARTTLS")
+    smtp_use_ssl: bool = Field(default=False, alias="SMTP_USE_SSL")
+    smtp_timeout_seconds: int = Field(default=10, alias="SMTP_TIMEOUT_SECONDS")
     max_upload_size_bytes: int = Field(default=10 * 1024 * 1024, alias="MAX_UPLOAD_SIZE_BYTES")
 
 
