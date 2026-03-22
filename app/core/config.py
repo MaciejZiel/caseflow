@@ -32,9 +32,14 @@ class Settings(BaseSettings):
         default=30,
         alias="WEBHOOK_RETRY_BASE_DELAY_SECONDS",
     )
+    email_retry_base_delay_seconds: int = Field(default=30, alias="EMAIL_RETRY_BASE_DELAY_SECONDS")
     worker_poll_interval_seconds: int = Field(default=30, alias="WORKER_POLL_INTERVAL_SECONDS")
     invitation_ttl_hours: int = Field(default=168, alias="INVITATION_TTL_HOURS")
     local_storage_path: Path = Field(default=Path("./storage"), alias="LOCAL_STORAGE_PATH")
+    local_email_sink_path: Path = Field(
+        default=Path("./.tmp/emails"),
+        alias="LOCAL_EMAIL_SINK_PATH",
+    )
     max_upload_size_bytes: int = Field(default=10 * 1024 * 1024, alias="MAX_UPLOAD_SIZE_BYTES")
 
 

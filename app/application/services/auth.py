@@ -17,6 +17,7 @@ from app.api.v1.schemas.auth import (
     RefreshTokenRequest,
     RegistrationRequest,
 )
+from app.application.services.emails import EmailOutboxService
 from app.core.config import get_settings
 from app.core.errors import AuthenticationError, ConflictError, DomainValidationError, NotFoundError
 from app.domain.auth.models import AuthSession, PasswordResetToken
@@ -280,13 +281,20 @@ class AuthService:
             token.revoked_at = now
 
         raw_token = generate_opaque_token()
+        expires_at = now + timedelta(minutes=self.settings.password_reset_ttl_minutes)
         password_reset = PasswordResetToken(
             user_id=user.id,
             token_hash=hash_opaque_token(raw_token),
-            expires_at=now + timedelta(minutes=self.settings.password_reset_ttl_minutes),
+            expires_at=expires_at,
         )
         self.session.add(password_reset)
+        email = EmailOutboxService(self.session).enqueue_password_reset_email(
+            user=user,
+            reset_token=raw_token,
+            expires_at=expires_at,
+        )
         self.session.commit()
+        EmailOutboxService(self.session).dispatch_emails([email.id])
         return OperationStatusResult(status="accepted")
 
     def confirm_password_reset(

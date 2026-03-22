@@ -4,6 +4,7 @@ from app.domain.audit.models import AuditLog
 from app.domain.auth.models import AuthSession, PasswordResetToken
 from app.domain.cases.models import Case, CaseComment
 from app.domain.documents.models import Document, DocumentReview, DocumentVersion
+from app.domain.emails.models import OutboundEmail
 from app.domain.jobs.models import ProcessingJob
 from app.domain.organizations.models import Invitation, Organization, OrganizationMembership
 from app.domain.users.models import User
@@ -19,6 +20,7 @@ def import_model_modules() -> None:
         Document,
         DocumentReview,
         DocumentVersion,
+        OutboundEmail,
         ProcessingJob,
         AuditLog,
         Organization,

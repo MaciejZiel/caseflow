@@ -17,6 +17,7 @@ from app.application.services.auth import (
     build_auth_result,
     create_auth_session,
 )
+from app.application.services.emails import EmailOutboxService
 from app.core.config import get_settings
 from app.core.errors import ConflictError, DomainValidationError
 from app.domain.organizations.models import Invitation, OrganizationMembership, OrganizationRole
@@ -70,8 +71,16 @@ class InvitationService:
         )
 
         self.session.add(invitation)
+        self.session.flush()
+        email = EmailOutboxService(self.session).enqueue_invitation_email(
+            invitation=invitation,
+            invitation_token=raw_token,
+            organization=actor.organization,
+            invited_by_name=f"{actor.user.first_name} {actor.user.last_name}".strip(),
+        )
         self.session.commit()
         self.session.refresh(invitation)
+        EmailOutboxService(self.session).dispatch_emails([email.id])
         return InvitationCreateResult(invitation=invitation, invitation_token=raw_token)
 
     def accept_invitation(

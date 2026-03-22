@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass
 
 from app.application.services.documents import DocumentService
+from app.application.services.emails import EmailOutboxService
 from app.application.services.webhooks import WebhookService
 from app.core.config import get_settings
 from app.infrastructure.db.session import get_session_factory
@@ -15,6 +16,7 @@ from app.infrastructure.db.session import get_session_factory
 class RetryCycleResult:
     processed_document_jobs: int
     processed_webhook_deliveries: int
+    processed_emails: int
 
 
 def run_retry_cycle(*, limit_per_queue: int = 50) -> RetryCycleResult:
@@ -26,9 +28,13 @@ def run_retry_cycle(*, limit_per_queue: int = 50) -> RetryCycleResult:
         processed_webhook_deliveries = len(
             WebhookService(session).process_due_retries(limit=limit_per_queue)
         )
+        processed_emails = len(
+            EmailOutboxService(session).process_due_emails(limit=limit_per_queue)
+        )
         return RetryCycleResult(
             processed_document_jobs=processed_document_jobs,
             processed_webhook_deliveries=processed_webhook_deliveries,
+            processed_emails=processed_emails,
         )
     finally:
         session.close()

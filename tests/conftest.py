@@ -17,6 +17,7 @@ async def async_client(tmp_path, monkeypatch) -> httpx.AsyncClient:
     monkeypatch.setenv("TEST_DATABASE_URL", f"sqlite+pysqlite:///{database_path}")
     monkeypatch.setenv("SECRET_KEY", "test-secret-key-with-32-plus-bytes")
     monkeypatch.setenv("LOCAL_STORAGE_PATH", str(tmp_path / "storage"))
+    monkeypatch.setenv("LOCAL_EMAIL_SINK_PATH", str(tmp_path / "emails"))
 
     get_settings.cache_clear()
     reset_db_state()
