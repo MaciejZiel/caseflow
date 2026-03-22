@@ -26,6 +26,7 @@ async def test_register_creates_owner_and_returns_access_token(
     body = response.json()
     assert response.status_code == 201
     assert body["access_token"]
+    assert body["refresh_token"]
     assert body["organization"]["slug"] == "acme-claims"
     assert body["membership"]["role"] == "owner"
 
@@ -64,3 +65,195 @@ async def test_login_and_me_return_current_session(async_client: httpx.AsyncClie
 
     assert me_response.status_code == 200
     assert me_response.json()["user"]["email"] == "ada@example.com"
+
+
+@pytest.mark.asyncio
+async def test_refresh_rotates_refresh_token_and_keeps_session_active(
+    async_client: httpx.AsyncClient,
+) -> None:
+    registration_response = await async_client.post(
+        "/api/v1/auth/register",
+        json=registration_payload(),
+    )
+    registration_body = registration_response.json()
+
+    refresh_response = await async_client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": registration_body["refresh_token"]},
+    )
+
+    assert refresh_response.status_code == 200
+    refresh_body = refresh_response.json()
+    assert refresh_body["access_token"] != registration_body["access_token"]
+    assert refresh_body["refresh_token"] != registration_body["refresh_token"]
+
+    old_refresh_response = await async_client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": registration_body["refresh_token"]},
+    )
+    assert old_refresh_response.status_code == 401
+
+    me_response = await async_client.get(
+        "/api/v1/me",
+        headers={"Authorization": f"Bearer {refresh_body['access_token']}"},
+    )
+    assert me_response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_logout_revokes_current_session(async_client: httpx.AsyncClient) -> None:
+    registration_response = await async_client.post(
+        "/api/v1/auth/register",
+        json=registration_payload(),
+    )
+    registration_body = registration_response.json()
+    access_token = registration_body["access_token"]
+    refresh_token = registration_body["refresh_token"]
+
+    logout_response = await async_client.post(
+        "/api/v1/auth/logout",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert logout_response.status_code == 204
+
+    me_response = await async_client.get(
+        "/api/v1/me",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    assert me_response.status_code == 401
+
+    refresh_response = await async_client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": refresh_token},
+    )
+    assert refresh_response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_logout_all_revokes_other_active_sessions(async_client: httpx.AsyncClient) -> None:
+    registration_response = await async_client.post(
+        "/api/v1/auth/register",
+        json=registration_payload(),
+    )
+    first_session = registration_response.json()
+
+    second_login_response = await async_client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "ada@example.com",
+            "password": "StrongPass123",
+        },
+    )
+    second_session = second_login_response.json()
+
+    logout_all_response = await async_client.post(
+        "/api/v1/auth/logout-all",
+        headers={"Authorization": f"Bearer {second_session['access_token']}"},
+    )
+
+    assert logout_all_response.status_code == 204
+
+    first_me_response = await async_client.get(
+        "/api/v1/me",
+        headers={"Authorization": f"Bearer {first_session['access_token']}"},
+    )
+    assert first_me_response.status_code == 401
+
+    second_refresh_response = await async_client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": second_session["refresh_token"]},
+    )
+    assert second_refresh_response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_password_reset_flow_rotates_credentials_and_revokes_sessions(
+    async_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registration_response = await async_client.post(
+        "/api/v1/auth/register",
+        json=registration_payload(),
+    )
+    registration_body = registration_response.json()
+
+    reset_token = "password-reset-token-1234567890"
+    monkeypatch.setattr("app.application.services.auth.generate_opaque_token", lambda: reset_token)
+
+    request_response = await async_client.post(
+        "/api/v1/auth/password-reset/request",
+        json={"email": "ada@example.com"},
+    )
+    assert request_response.status_code == 202
+    assert request_response.json()["status"] == "accepted"
+
+    confirm_response = await async_client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={
+            "token": reset_token,
+            "password": "NewStrongPass123",
+        },
+    )
+
+    assert confirm_response.status_code == 200
+    assert confirm_response.json()["status"] == "password_reset"
+
+    stale_session_response = await async_client.get(
+        "/api/v1/me",
+        headers={"Authorization": f"Bearer {registration_body['access_token']}"},
+    )
+    assert stale_session_response.status_code == 401
+
+    stale_refresh_response = await async_client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": registration_body["refresh_token"]},
+    )
+    assert stale_refresh_response.status_code == 401
+
+    old_password_login_response = await async_client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "ada@example.com",
+            "password": "StrongPass123",
+        },
+    )
+    assert old_password_login_response.status_code == 401
+
+    new_password_login_response = await async_client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": "ada@example.com",
+            "password": "NewStrongPass123",
+        },
+    )
+    assert new_password_login_response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_password_reset_confirm_rejects_reused_token(
+    async_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await async_client.post("/api/v1/auth/register", json=registration_payload())
+
+    reset_token = "reused-reset-token-1234567890"
+    monkeypatch.setattr("app.application.services.auth.generate_opaque_token", lambda: reset_token)
+
+    await async_client.post(
+        "/api/v1/auth/password-reset/request",
+        json={"email": "ada@example.com"},
+    )
+
+    first_confirm_response = await async_client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={"token": reset_token, "password": "NewStrongPass123"},
+    )
+    second_confirm_response = await async_client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={"token": reset_token, "password": "AnotherPass123"},
+    )
+
+    assert first_confirm_response.status_code == 200
+    assert second_confirm_response.status_code == 400
+    assert second_confirm_response.json()["error"]["code"] == "password_reset_token_inactive"

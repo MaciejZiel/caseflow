@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     secret_key: str = Field(default="change-me", alias="SECRET_KEY")
     access_token_ttl_minutes: int = Field(default=15, alias="ACCESS_TOKEN_TTL_MINUTES")
     refresh_token_ttl_days: int = Field(default=30, alias="REFRESH_TOKEN_TTL_DAYS")
+    password_reset_ttl_minutes: int = Field(default=30, alias="PASSWORD_RESET_TTL_MINUTES")
     invitation_ttl_hours: int = Field(default=168, alias="INVITATION_TTL_HOURS")
     local_storage_path: Path = Field(default=Path("./storage"), alias="LOCAL_STORAGE_PATH")
     max_upload_size_bytes: int = Field(default=10 * 1024 * 1024, alias="MAX_UPLOAD_SIZE_BYTES")

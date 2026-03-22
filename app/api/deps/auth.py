@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -12,8 +13,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.application.actors import ActorContext
 from app.core.errors import AuthenticationError
-from app.domain.organizations.models import OrganizationMembership
-from app.domain.users.models import User
+from app.domain.auth.models import AuthSession
+from app.domain.organizations.models import OrganizationMembership, OrganizationStatus
 from app.infrastructure.db.session import get_db_session
 from app.infrastructure.security.tokens import decode_access_token
 
@@ -32,22 +33,46 @@ async def get_current_actor(
     payload = decode_access_token(credentials.credentials)
     user_id = UUID(payload["sub"])
     organization_id = UUID(payload["organization_id"])
+    session_id = _parse_session_id(payload)
 
-    membership = session.scalar(
-        select(OrganizationMembership)
+    auth_session = session.scalar(
+        select(AuthSession)
         .options(
-            joinedload(OrganizationMembership.organization),
-            joinedload(OrganizationMembership.user),
+            joinedload(AuthSession.organization),
+            joinedload(AuthSession.membership).joinedload(OrganizationMembership.organization),
+            joinedload(AuthSession.user),
         )
-        .join(OrganizationMembership.user)
         .where(
-            OrganizationMembership.user_id == user_id,
-            OrganizationMembership.organization_id == organization_id,
-            OrganizationMembership.is_active.is_(True),
-            User.is_active.is_(True),
+            AuthSession.id == session_id,
+            AuthSession.user_id == user_id,
+            AuthSession.organization_id == organization_id,
+            AuthSession.revoked_at.is_(None),
         )
     )
-    if membership is None:
+    if auth_session is None:
+        raise AuthenticationError("Authentication context is invalid or no longer active.")
+    if _to_utc(auth_session.refresh_token_expires_at) < datetime.now(UTC):
+        raise AuthenticationError("Authentication context is invalid or no longer active.")
+    if not auth_session.user.is_active or not auth_session.membership.is_active:
+        raise AuthenticationError("Authentication context is invalid or no longer active.")
+    if auth_session.organization.status is not OrganizationStatus.ACTIVE:
         raise AuthenticationError("Authentication context is invalid or no longer active.")
 
-    return CurrentActor(user=membership.user, membership=membership)
+    return CurrentActor(
+        user=auth_session.user,
+        membership=auth_session.membership,
+        auth_session=auth_session,
+    )
+
+
+def _parse_session_id(payload: dict[str, str]) -> UUID:
+    raw_session_id = payload.get("session_id")
+    if raw_session_id is None:
+        raise AuthenticationError("Authentication context is invalid or no longer active.")
+    return UUID(raw_session_id)
+
+
+def _to_utc(value):
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

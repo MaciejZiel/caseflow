@@ -11,6 +11,10 @@ from app.api.deps.auth import CurrentActor, get_current_actor
 from app.api.v1.schemas.auth import (
     AuthResponse,
     LoginRequest,
+    OperationStatusResponse,
+    PasswordResetConfirmRequest,
+    PasswordResetRequest,
+    RefreshTokenRequest,
     RegistrationRequest,
     SessionResponse,
 )
@@ -39,6 +43,22 @@ async def login(payload: LoginRequest, session: SessionDep) -> AuthResponse:
     return AuthResponse.model_validate(result)
 
 
+@router.post("/auth/refresh", response_model=AuthResponse)
+async def refresh_session(payload: RefreshTokenRequest, session: SessionDep) -> AuthResponse:
+    result = AuthService(session).refresh_session(payload)
+    return AuthResponse.model_validate(result)
+
+
+@router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(actor: CurrentActorDep, session: SessionDep) -> None:
+    AuthService(session).logout_current_session(auth_session=actor.auth_session)
+
+
+@router.post("/auth/logout-all", status_code=status.HTTP_204_NO_CONTENT)
+async def logout_all(actor: CurrentActorDep, session: SessionDep) -> None:
+    AuthService(session).logout_all_sessions(user=actor.user)
+
+
 @router.post(
     "/auth/invitations/accept",
     response_model=AuthResponse,
@@ -50,6 +70,31 @@ async def accept_invitation(
 ) -> AuthResponse:
     result = InvitationService(session).accept_invitation(payload)
     return AuthResponse.model_validate(result)
+
+
+@router.post(
+    "/auth/password-reset/request",
+    response_model=OperationStatusResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def request_password_reset(
+    payload: PasswordResetRequest,
+    session: SessionDep,
+) -> OperationStatusResponse:
+    result = AuthService(session).request_password_reset(payload)
+    return OperationStatusResponse(status=result.status)
+
+
+@router.post(
+    "/auth/password-reset/confirm",
+    response_model=OperationStatusResponse,
+)
+async def confirm_password_reset(
+    payload: PasswordResetConfirmRequest,
+    session: SessionDep,
+) -> OperationStatusResponse:
+    result = AuthService(session).confirm_password_reset(payload)
+    return OperationStatusResponse(status=result.status)
 
 
 @router.get("/me", response_model=SessionResponse)

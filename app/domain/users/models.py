@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.infrastructure.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
+    from app.domain.auth.models import AuthSession, PasswordResetToken
     from app.domain.organizations.models import OrganizationMembership
 
 
@@ -26,6 +27,14 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     last_login_at: Mapped[datetime | None]
 
     memberships: Mapped[list[OrganizationMembership]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    auth_sessions: Mapped[list[AuthSession]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    password_reset_tokens: Mapped[list[PasswordResetToken]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
     )

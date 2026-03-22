@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import jwt
 from jwt import InvalidTokenError
@@ -14,7 +14,13 @@ from app.core.errors import AuthenticationError
 JWT_ALGORITHM = "HS256"
 
 
-def create_access_token(*, user_id: UUID, organization_id: UUID, role: str) -> tuple[str, int]:
+def create_access_token(
+    *,
+    user_id: UUID,
+    organization_id: UUID,
+    role: str,
+    session_id: UUID,
+) -> tuple[str, int]:
     settings = get_settings()
     issued_at = datetime.now(UTC)
     expires_in = settings.access_token_ttl_minutes * 60
@@ -23,6 +29,8 @@ def create_access_token(*, user_id: UUID, organization_id: UUID, role: str) -> t
         "sub": str(user_id),
         "organization_id": str(organization_id),
         "role": role,
+        "session_id": str(session_id),
+        "jti": str(uuid4()),
         "type": "access",
         "iat": issued_at,
         "exp": expires_at,

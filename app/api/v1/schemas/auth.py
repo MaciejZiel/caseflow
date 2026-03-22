@@ -20,6 +20,16 @@ def _normalize_email(value: str) -> str:
     return email
 
 
+def validate_password_rules(value: str) -> str:
+    has_upper = any(character.isupper() for character in value)
+    has_lower = any(character.islower() for character in value)
+    has_digit = any(character.isdigit() for character in value)
+    if not (has_upper and has_lower and has_digit):
+        msg = "Password must contain upper-case, lower-case and numeric characters."
+        raise ValueError(msg)
+    return value
+
+
 class RegistrationRequest(BaseModel):
     organization_name: str = Field(min_length=3, max_length=255)
     organization_slug: str = Field(
@@ -40,13 +50,7 @@ class RegistrationRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password(cls, value: str) -> str:
-        has_upper = any(character.isupper() for character in value)
-        has_lower = any(character.islower() for character in value)
-        has_digit = any(character.isdigit() for character in value)
-        if not (has_upper and has_lower and has_digit):
-            msg = "Password must contain upper-case, lower-case and numeric characters."
-            raise ValueError(msg)
-        return value
+        return validate_password_rules(value)
 
 
 class LoginRequest(BaseModel):
@@ -58,6 +62,29 @@ class LoginRequest(BaseModel):
     @classmethod
     def validate_email(cls, value: str) -> str:
         return _normalize_email(value)
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str = Field(min_length=20, max_length=512)
+
+
+class PasswordResetRequest(BaseModel):
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        return _normalize_email(value)
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=512)
+    password: str = Field(min_length=10, max_length=128)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        return validate_password_rules(value)
 
 
 class UserResponse(BaseModel):
@@ -100,5 +127,11 @@ class SessionResponse(BaseModel):
 
 class AuthResponse(SessionResponse):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+    refresh_token_expires_in: int
+
+
+class OperationStatusResponse(BaseModel):
+    status: str

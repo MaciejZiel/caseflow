@@ -8,7 +8,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.api.v1.schemas.auth import MembershipResponse, OrganizationResponse, UserResponse
+from app.api.v1.schemas.auth import (
+    MembershipResponse,
+    OrganizationResponse,
+    UserResponse,
+    validate_password_rules,
+)
 from app.domain.organizations.models import OrganizationRole
 
 
@@ -40,13 +45,7 @@ class InvitationAcceptRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password(cls, value: str) -> str:
-        has_upper = any(character.isupper() for character in value)
-        has_lower = any(character.islower() for character in value)
-        has_digit = any(character.isdigit() for character in value)
-        if not (has_upper and has_lower and has_digit):
-            msg = "Password must contain upper-case, lower-case and numeric characters."
-            raise ValueError(msg)
-        return value
+        return validate_password_rules(value)
 
 
 class InvitationResponse(BaseModel):

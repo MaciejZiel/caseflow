@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.api.v1.schemas.organizations import InvitationAcceptRequest, InvitationCreateRequest
 from app.application.actors import ActorContext
-from app.application.services.auth import AuthResult, build_auth_result
+from app.application.services.auth import AuthResult, build_auth_result, create_auth_session
 from app.core.config import get_settings
 from app.core.errors import ConflictError, DomainValidationError
 from app.domain.organizations.models import Invitation, OrganizationMembership, OrganizationRole
@@ -110,9 +110,17 @@ class InvitationService:
             role=invitation.role,
         )
         invitation.accepted_at = datetime.now(UTC)
+        auth_session, refresh_token = create_auth_session(
+            user=user,
+            organization=invitation.organization,
+            membership=membership,
+            settings=self.settings,
+        )
+        user.last_login_at = datetime.now(UTC)
 
         try:
-            self.session.add_all([user, membership])
+            self.session.add_all([user, membership, auth_session])
+            self.session.flush()
             self.session.commit()
         except IntegrityError as exc:
             self.session.rollback()
@@ -128,6 +136,9 @@ class InvitationService:
             user=user,
             organization=invitation.organization,
             membership=membership,
+            auth_session=auth_session,
+            refresh_token=refresh_token,
+            settings=self.settings,
         )
 
     def _ensure_email_not_already_assigned(self, *, actor: ActorContext, email: str) -> None:
