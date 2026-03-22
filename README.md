@@ -25,7 +25,7 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - document approve/reject workflow with case status transitions
 - retry worker for failed processing jobs, webhook deliveries and email outbox messages
 - audit log for cases and documents
-- webhook endpoints, HMAC-signed deliveries and delivery history
+- webhook endpoints, event subscriptions, replay tooling, HMAC-signed deliveries and delivery history
 - pluggable email delivery backends with local sink and SMTP adapter
 - organization API keys with scoped read-only integration endpoints
 - case summary reporting, case search and CSV export surfaces
@@ -68,8 +68,10 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - `POST /api/v1/documents/{document_id}/jobs/{job_id}/retry`
 - `GET /api/v1/documents/{document_id}/audit-log`
 - `POST /api/v1/webhooks/endpoints`
+- `PATCH /api/v1/webhooks/endpoints/{endpoint_id}`
 - `GET /api/v1/webhooks/deliveries`
 - `POST /api/v1/webhooks/deliveries/{delivery_id}/retry`
+- `POST /api/v1/webhooks/deliveries/{delivery_id}/replay`
 - `GET /health`
 - `GET /ready`
 - `GET /metrics`
@@ -172,6 +174,8 @@ Integration tests cover:
   endpoints instead of broad write access to the main app API.
 - Reporting and search stay tenant-scoped and reuse the same domain model instead of creating a
   second analytics datastore too early.
+- Webhook endpoints can subscribe to selected event types, while replay creates a fresh delivery
+  record instead of mutating historical delivery state.
 - Proxy-derived client metadata is opt-in, while CORS and host filtering stay configuration-driven
   for deployment safety.
 - Document processing, webhook delivery and outbound emails can run inline for local simplicity or via
@@ -182,4 +186,4 @@ Integration tests cover:
 ## Next High-Value Steps
 
 - retention policies and admin-level operational tooling
-- richer webhook subscription filtering and event replay tooling
+- admin console / operational endpoints for safer day-2 maintenance
