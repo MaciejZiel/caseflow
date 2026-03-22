@@ -32,7 +32,7 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - security headers, trusted host filtering, opt-in proxy header trust and CORS allowlists
 - organization operations summary, failure inspection and scoped retry-due maintenance endpoints
 - retention preview/run endpoints for old delivered webhooks and sent outbound emails
-- platform admin overview, anomaly detection, tenant activity feed and lifecycle controls
+- platform admin overview, anomaly detection, tenant activity feed and bulk lifecycle controls
 - demo data seeding script for a ready-to-show local environment
 - Alembic migrations and integration tests
 
@@ -55,6 +55,7 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - `GET /api/v1/admin/organizations`
 - `GET /api/v1/admin/organizations/{organization_id}`
 - `GET /api/v1/admin/organizations/{organization_id}/activity`
+- `POST /api/v1/admin/organizations/bulk-status`
 - `GET /api/v1/admin/overview`
 - `GET /api/v1/admin/anomalies`
 - `GET /api/v1/admin/failures`
@@ -177,7 +178,7 @@ Integration tests cover:
 - API key management and tenant-scoped integration access
 - case reporting, search and CSV export
 - operational summary, failures and maintenance retry endpoints
-- platform admin overview, anomaly detection, activity feed and lifecycle controls
+- platform admin overview, anomaly detection, activity feed and bulk lifecycle controls
 - retention preview and cleanup controls
 - email outbox and local sink delivery
 - demo data seeding
