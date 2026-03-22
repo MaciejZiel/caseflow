@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.auth import SuperuserActor, get_current_superuser_actor
 from app.api.v1.schemas.admin import (
+    AdminAnomalyResponse,
     AdminAuditEventResponse,
     AdminFailureResponse,
     AdminOrganizationDetailResponse,
@@ -19,6 +21,7 @@ from app.api.v1.schemas.admin import (
     AdminOverviewResponse,
     AdminRetryDueResponse,
 )
+from app.api.v1.schemas.audit import AuditLogResponse
 from app.api.v1.schemas.operations import OperationsFailureResponse
 from app.application.services.admin import AdminService
 from app.domain.organizations.models import OrganizationStatus
@@ -97,6 +100,33 @@ async def retry_due_items(
         processed_webhook_deliveries=result.processed_webhook_deliveries,
         processed_emails=result.processed_emails,
     )
+
+
+@router.get("/anomalies", response_model=list[AdminAnomalyResponse])
+async def list_anomalies(
+    actor: SuperuserActorDep,
+    session: SessionDep,
+    severity: Annotated[Literal["critical", "warning", "info"] | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> list[AdminAnomalyResponse]:
+    anomalies = AdminService(session).list_anomalies(
+        actor=actor,
+        severity=severity,
+        limit=limit,
+    )
+    return [
+        AdminAnomalyResponse(
+            organization_id=item.organization_id,
+            organization_name=item.organization_name,
+            organization_slug=item.organization_slug,
+            severity=item.severity,
+            code=item.code,
+            summary=item.summary,
+            detected_at=item.detected_at,
+            metadata=item.metadata,
+        )
+        for item in anomalies
+    ]
 
 
 @router.get("/organizations", response_model=list[AdminOrganizationListItemResponse])
@@ -193,6 +223,32 @@ async def get_organization_detail(
         ],
         last_activity_at=detail.last_activity_at,
     )
+
+
+@router.get(
+    "/organizations/{organization_id}/activity",
+    response_model=list[AuditLogResponse],
+)
+async def list_organization_activity(
+    organization_id: UUID,
+    actor: SuperuserActorDep,
+    session: SessionDep,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    event_type: Annotated[str | None, Query(min_length=1, max_length=120)] = None,
+    entity_type: Annotated[str | None, Query(min_length=1, max_length=80)] = None,
+    actor_user_id: Annotated[UUID | None, Query()] = None,
+    since: Annotated[datetime | None, Query()] = None,
+) -> list[AuditLogResponse]:
+    activity = AdminService(session).list_organization_activity(
+        actor=actor,
+        organization_id=organization_id,
+        limit=limit,
+        event_type=event_type,
+        entity_type=entity_type,
+        actor_user_id=actor_user_id,
+        since=since,
+    )
+    return [AuditLogResponse.model_validate(item, from_attributes=True) for item in activity]
 
 
 @router.post(

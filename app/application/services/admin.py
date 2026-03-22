@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, or_, select
@@ -15,6 +15,7 @@ from app.application.services.emails import EmailOutboxService
 from app.application.services.events import EventPublisher
 from app.application.services.operations import OperationsFailureItem
 from app.application.services.webhooks import WebhookService
+from app.core.config import get_settings
 from app.core.errors import DomainValidationError, NotFoundError, PermissionDeniedError
 from app.domain.api_keys.models import ApiKey
 from app.domain.audit.models import AuditLog
@@ -26,6 +27,7 @@ from app.domain.jobs.models import ProcessingJob, ProcessingJobStatus
 from app.domain.organizations.models import (
     Organization,
     OrganizationMembership,
+    OrganizationRole,
     OrganizationStatus,
 )
 from app.domain.users.models import User
@@ -113,9 +115,22 @@ class AdminRetryDueResult:
     processed_emails: int
 
 
+@dataclass(slots=True)
+class AdminAnomalyItem:
+    organization_id: UUID
+    organization_name: str
+    organization_slug: str
+    severity: str
+    code: str
+    summary: str
+    detected_at: datetime
+    metadata: dict[str, object]
+
+
 class AdminService:
     def __init__(self, session: Session) -> None:
         self.session = session
+        self.settings = get_settings()
 
     def list_organizations(
         self,
@@ -536,6 +551,63 @@ class AdminService:
             processed_emails=processed_emails,
         )
 
+    def list_anomalies(
+        self,
+        *,
+        actor: ActorContext,
+        severity: str | None,
+        limit: int,
+    ) -> list[AdminAnomalyItem]:
+        self._ensure_superuser(actor)
+        anomalies = [
+            *self._detect_organizations_without_active_owner(),
+            *self._detect_failed_job_anomalies(),
+            *self._detect_failed_webhook_anomalies(),
+            *self._detect_failed_email_anomalies(),
+            *self._detect_stale_processing_queue_anomalies(),
+            *self._detect_stale_webhook_queue_anomalies(),
+            *self._detect_stale_email_queue_anomalies(),
+            *self._detect_inactive_organization_api_key_anomalies(),
+            *self._detect_inactive_organization_session_anomalies(),
+        ]
+        if severity is not None:
+            anomalies = [item for item in anomalies if item.severity == severity]
+        anomalies.sort(
+            key=lambda item: (
+                self._severity_rank(item.severity),
+                -item.detected_at.timestamp(),
+                item.organization_slug,
+                item.code,
+            )
+        )
+        return anomalies[:limit]
+
+    def list_organization_activity(
+        self,
+        *,
+        actor: ActorContext,
+        organization_id: UUID,
+        limit: int,
+        event_type: str | None,
+        entity_type: str | None,
+        actor_user_id: UUID | None,
+        since: datetime | None,
+    ) -> list[AuditLog]:
+        self._ensure_superuser(actor)
+        self._get_organization(organization_id)
+        query = select(AuditLog).where(AuditLog.organization_id == organization_id)
+        if event_type is not None:
+            query = query.where(AuditLog.event_type == event_type)
+        if entity_type is not None:
+            query = query.where(AuditLog.entity_type == entity_type)
+        if actor_user_id is not None:
+            query = query.where(AuditLog.actor_user_id == actor_user_id)
+        if since is not None:
+            query = query.where(AuditLog.created_at >= since)
+        return list(
+            self.session.scalars(query.order_by(AuditLog.created_at.desc()).limit(limit))
+        )
+
     def suspend_organization(
         self,
         *,
@@ -753,6 +825,360 @@ class AdminService:
         )
         return failures[:limit]
 
+    def _detect_organizations_without_active_owner(self) -> list[AdminAnomalyItem]:
+        active_owner_count = (
+            select(func.count(OrganizationMembership.id))
+            .where(
+                OrganizationMembership.organization_id == Organization.id,
+                OrganizationMembership.role == OrganizationRole.OWNER,
+                OrganizationMembership.is_active.is_(True),
+            )
+            .correlate(Organization)
+            .scalar_subquery()
+        )
+        return [
+            AdminAnomalyItem(
+                organization_id=organization.id,
+                organization_name=organization.name,
+                organization_slug=organization.slug,
+                severity="critical",
+                code="organization_without_active_owner",
+                summary="Organization has no active owner membership.",
+                detected_at=datetime.now(UTC),
+                metadata={"status": organization.status.value},
+            )
+            for organization in self.session.scalars(
+                select(Organization).where(
+                    Organization.status != OrganizationStatus.ARCHIVED,
+                    active_owner_count == 0,
+                )
+            )
+        ]
+
+    def _detect_failed_job_anomalies(self) -> list[AdminAnomalyItem]:
+        threshold = self.settings.admin_failure_anomaly_threshold
+        rows = self.session.execute(
+            select(
+                Organization.id,
+                Organization.name,
+                Organization.slug,
+                func.count(ProcessingJob.id),
+                func.max(ProcessingJob.created_at),
+            )
+            .join(ProcessingJob, ProcessingJob.organization_id == Organization.id)
+            .where(
+                ProcessingJob.status.in_(
+                    [ProcessingJobStatus.FAILED, ProcessingJobStatus.DEAD_LETTERED]
+                )
+            )
+            .group_by(Organization.id, Organization.name, Organization.slug)
+            .having(func.count(ProcessingJob.id) >= threshold)
+        )
+        return [
+            AdminAnomalyItem(
+                organization_id=organization_id,
+                organization_name=organization_name,
+                organization_slug=organization_slug,
+                severity="critical",
+                code="organization_failed_jobs_threshold_exceeded",
+                summary="Organization exceeded the failed processing jobs threshold.",
+                detected_at=latest_failure_at,
+                metadata={"failed_jobs": failed_jobs, "threshold": threshold},
+            )
+            for (
+                organization_id,
+                organization_name,
+                organization_slug,
+                failed_jobs,
+                latest_failure_at,
+            ) in rows
+        ]
+
+    def _detect_failed_webhook_anomalies(self) -> list[AdminAnomalyItem]:
+        threshold = self.settings.admin_failure_anomaly_threshold
+        rows = self.session.execute(
+            select(
+                Organization.id,
+                Organization.name,
+                Organization.slug,
+                func.count(WebhookDelivery.id),
+                func.max(WebhookDelivery.created_at),
+            )
+            .join(WebhookDelivery, WebhookDelivery.organization_id == Organization.id)
+            .where(WebhookDelivery.status == WebhookDeliveryStatus.FAILED)
+            .group_by(Organization.id, Organization.name, Organization.slug)
+            .having(func.count(WebhookDelivery.id) >= threshold)
+        )
+        return [
+            AdminAnomalyItem(
+                organization_id=organization_id,
+                organization_name=organization_name,
+                organization_slug=organization_slug,
+                severity="warning",
+                code="organization_failed_webhook_deliveries_threshold_exceeded",
+                summary="Organization exceeded the failed webhook deliveries threshold.",
+                detected_at=latest_failure_at,
+                metadata={
+                    "failed_webhook_deliveries": failed_deliveries,
+                    "threshold": threshold,
+                },
+            )
+            for (
+                organization_id,
+                organization_name,
+                organization_slug,
+                failed_deliveries,
+                latest_failure_at,
+            ) in rows
+        ]
+
+    def _detect_failed_email_anomalies(self) -> list[AdminAnomalyItem]:
+        threshold = self.settings.admin_failure_anomaly_threshold
+        rows = self.session.execute(
+            select(
+                Organization.id,
+                Organization.name,
+                Organization.slug,
+                func.count(OutboundEmail.id),
+                func.max(OutboundEmail.created_at),
+            )
+            .join(OutboundEmail, OutboundEmail.organization_id == Organization.id)
+            .where(OutboundEmail.status == OutboundEmailStatus.FAILED)
+            .group_by(Organization.id, Organization.name, Organization.slug)
+            .having(func.count(OutboundEmail.id) >= threshold)
+        )
+        return [
+            AdminAnomalyItem(
+                organization_id=organization_id,
+                organization_name=organization_name,
+                organization_slug=organization_slug,
+                severity="warning",
+                code="organization_failed_emails_threshold_exceeded",
+                summary="Organization exceeded the failed outbound emails threshold.",
+                detected_at=latest_failure_at,
+                metadata={"failed_emails": failed_emails, "threshold": threshold},
+            )
+            for (
+                organization_id,
+                organization_name,
+                organization_slug,
+                failed_emails,
+                latest_failure_at,
+            ) in rows
+        ]
+
+    def _detect_stale_processing_queue_anomalies(self) -> list[AdminAnomalyItem]:
+        stale_before = datetime.now(UTC) - timedelta(hours=self.settings.admin_queue_stale_hours)
+        due_at = func.coalesce(ProcessingJob.next_retry_at, ProcessingJob.scheduled_at)
+        rows = self.session.execute(
+            select(
+                Organization.id,
+                Organization.name,
+                Organization.slug,
+                func.count(ProcessingJob.id),
+                func.min(due_at),
+            )
+            .join(ProcessingJob, ProcessingJob.organization_id == Organization.id)
+            .where(
+                ProcessingJob.status.in_([ProcessingJobStatus.PENDING, ProcessingJobStatus.QUEUED]),
+                due_at < stale_before,
+            )
+            .group_by(Organization.id, Organization.name, Organization.slug)
+        )
+        return [
+            AdminAnomalyItem(
+                organization_id=organization_id,
+                organization_name=organization_name,
+                organization_slug=organization_slug,
+                severity="warning",
+                code="organization_stale_processing_queue",
+                summary=(
+                    "Organization has stale processing jobs waiting beyond the queue threshold."
+                ),
+                detected_at=oldest_due_at,
+                metadata={
+                    "queued_jobs": queued_jobs,
+                    "stale_before": stale_before.isoformat(),
+                },
+            )
+            for (
+                organization_id,
+                organization_name,
+                organization_slug,
+                queued_jobs,
+                oldest_due_at,
+            ) in rows
+        ]
+
+    def _detect_stale_webhook_queue_anomalies(self) -> list[AdminAnomalyItem]:
+        stale_before = datetime.now(UTC) - timedelta(hours=self.settings.admin_queue_stale_hours)
+        due_at = func.coalesce(WebhookDelivery.next_retry_at, WebhookDelivery.created_at)
+        rows = self.session.execute(
+            select(
+                Organization.id,
+                Organization.name,
+                Organization.slug,
+                func.count(WebhookDelivery.id),
+                func.min(due_at),
+            )
+            .join(WebhookDelivery, WebhookDelivery.organization_id == Organization.id)
+            .where(
+                WebhookDelivery.status == WebhookDeliveryStatus.PENDING,
+                due_at < stale_before,
+            )
+            .group_by(Organization.id, Organization.name, Organization.slug)
+        )
+        return [
+            AdminAnomalyItem(
+                organization_id=organization_id,
+                organization_name=organization_name,
+                organization_slug=organization_slug,
+                severity="warning",
+                code="organization_stale_webhook_queue",
+                summary=(
+                    "Organization has stale webhook deliveries waiting beyond the queue threshold."
+                ),
+                detected_at=oldest_due_at,
+                metadata={
+                    "queued_webhook_deliveries": queued_deliveries,
+                    "stale_before": stale_before.isoformat(),
+                },
+            )
+            for (
+                organization_id,
+                organization_name,
+                organization_slug,
+                queued_deliveries,
+                oldest_due_at,
+            ) in rows
+        ]
+
+    def _detect_stale_email_queue_anomalies(self) -> list[AdminAnomalyItem]:
+        stale_before = datetime.now(UTC) - timedelta(hours=self.settings.admin_queue_stale_hours)
+        due_at = func.coalesce(OutboundEmail.next_retry_at, OutboundEmail.scheduled_at)
+        rows = self.session.execute(
+            select(
+                Organization.id,
+                Organization.name,
+                Organization.slug,
+                func.count(OutboundEmail.id),
+                func.min(due_at),
+            )
+            .join(OutboundEmail, OutboundEmail.organization_id == Organization.id)
+            .where(
+                OutboundEmail.status == OutboundEmailStatus.PENDING,
+                due_at < stale_before,
+            )
+            .group_by(Organization.id, Organization.name, Organization.slug)
+        )
+        return [
+            AdminAnomalyItem(
+                organization_id=organization_id,
+                organization_name=organization_name,
+                organization_slug=organization_slug,
+                severity="warning",
+                code="organization_stale_email_queue",
+                summary=(
+                    "Organization has stale outbound emails waiting beyond the queue threshold."
+                ),
+                detected_at=oldest_due_at,
+                metadata={
+                    "queued_emails": queued_emails,
+                    "stale_before": stale_before.isoformat(),
+                },
+            )
+            for (
+                organization_id,
+                organization_name,
+                organization_slug,
+                queued_emails,
+                oldest_due_at,
+            ) in rows
+        ]
+
+    def _detect_inactive_organization_api_key_anomalies(self) -> list[AdminAnomalyItem]:
+        now = datetime.now(UTC)
+        rows = self.session.execute(
+            select(
+                Organization.id,
+                Organization.name,
+                Organization.slug,
+                func.count(ApiKey.id),
+                func.max(ApiKey.created_at),
+            )
+            .join(ApiKey, ApiKey.organization_id == Organization.id)
+            .where(
+                Organization.status != OrganizationStatus.ACTIVE,
+                ApiKey.revoked_at.is_(None),
+                or_(ApiKey.expires_at.is_(None), ApiKey.expires_at > now),
+            )
+            .group_by(Organization.id, Organization.name, Organization.slug)
+        )
+        return [
+            AdminAnomalyItem(
+                organization_id=organization_id,
+                organization_name=organization_name,
+                organization_slug=organization_slug,
+                severity="warning",
+                code="inactive_organization_with_active_api_keys",
+                summary="Inactive organization still has active API keys.",
+                detected_at=latest_api_key_created_at,
+                metadata={"active_api_keys": active_api_keys},
+            )
+            for (
+                organization_id,
+                organization_name,
+                organization_slug,
+                active_api_keys,
+                latest_api_key_created_at,
+            ) in rows
+        ]
+
+    def _detect_inactive_organization_session_anomalies(self) -> list[AdminAnomalyItem]:
+        now = datetime.now(UTC)
+        rows = self.session.execute(
+            select(
+                Organization.id,
+                Organization.name,
+                Organization.slug,
+                func.count(AuthSession.id),
+                func.max(AuthSession.created_at),
+            )
+            .join(AuthSession, AuthSession.organization_id == Organization.id)
+            .join(User, AuthSession.user_id == User.id)
+            .join(
+                OrganizationMembership,
+                AuthSession.membership_id == OrganizationMembership.id,
+            )
+            .where(
+                Organization.status != OrganizationStatus.ACTIVE,
+                AuthSession.revoked_at.is_(None),
+                AuthSession.refresh_token_expires_at > now,
+                User.is_active.is_(True),
+                OrganizationMembership.is_active.is_(True),
+            )
+            .group_by(Organization.id, Organization.name, Organization.slug)
+        )
+        return [
+            AdminAnomalyItem(
+                organization_id=organization_id,
+                organization_name=organization_name,
+                organization_slug=organization_slug,
+                severity="critical",
+                code="inactive_organization_with_active_auth_sessions",
+                summary="Inactive organization still has active auth sessions.",
+                detected_at=latest_session_created_at,
+                metadata={"active_auth_sessions": active_auth_sessions},
+            )
+            for (
+                organization_id,
+                organization_name,
+                organization_slug,
+                active_auth_sessions,
+                latest_session_created_at,
+            ) in rows
+        ]
+
     def _revoke_organization_auth_sessions(self, *, organization_id: UUID, reason: str) -> int:
         now = datetime.now(UTC)
         active_sessions = list(
@@ -767,3 +1193,7 @@ class AdminService:
             auth_session.revoked_at = now
             auth_session.revoke_reason = reason
         return len(active_sessions)
+
+    @staticmethod
+    def _severity_rank(severity: str) -> int:
+        return {"critical": 0, "warning": 1, "info": 2}.get(severity, 99)

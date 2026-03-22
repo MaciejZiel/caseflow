@@ -45,6 +45,14 @@ class Settings(BaseSettings):
         default=30,
         alias="OUTBOUND_EMAIL_RETENTION_DAYS",
     )
+    admin_failure_anomaly_threshold: int = Field(
+        default=3,
+        alias="ADMIN_FAILURE_ANOMALY_THRESHOLD",
+    )
+    admin_queue_stale_hours: int = Field(
+        default=24,
+        alias="ADMIN_QUEUE_STALE_HOURS",
+    )
     document_processing_mode: Literal["inline", "worker"] = Field(
         default="inline",
         alias="DOCUMENT_PROCESSING_MODE",

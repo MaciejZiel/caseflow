@@ -111,3 +111,14 @@ class AdminRetryDueResponse(BaseModel):
     processed_document_jobs: int
     processed_webhook_deliveries: int
     processed_emails: int
+
+
+class AdminAnomalyResponse(BaseModel):
+    organization_id: UUID
+    organization_name: str
+    organization_slug: str
+    severity: str
+    code: str
+    summary: str
+    detected_at: datetime
+    metadata: dict[str, object]
