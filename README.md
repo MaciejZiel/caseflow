@@ -106,7 +106,9 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 10. Set `CORS_ALLOWED_ORIGINS` and `TRUSTED_HOST_PATTERNS` as JSON arrays before putting the API
     behind a real frontend or public ingress.
 11. Enable `TRUST_PROXY_HEADERS` only when the app runs behind a trusted reverse proxy.
-12. Run checks with `make lint` and `make test`.
+12. Promote a platform admin with `make promote-superuser EMAIL=owner@example.com` if you need
+    access to `/api/v1/admin/*`.
+13. Run checks with `make lint` and `make test`.
 
 ## Demo Dataset
 
@@ -200,6 +202,8 @@ Integration tests cover:
   their existing auth sessions reusable after reactivation.
 - Platform-wide retry uses the same persisted queues as organization-scoped maintenance and the
   background worker, so operational behavior does not fork between code paths.
+- Superuser access is managed explicitly through a dedicated service and script instead of being
+  hardcoded into registration or environment-only bootstrap logic.
 - Retention cleanup is explicit and previewable, so old operational records can be pruned without
   blind deletes.
 - Proxy-derived client metadata is opt-in, while CORS and host filtering stay configuration-driven
