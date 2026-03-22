@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from io import StringIO
 from uuid import UUID
 
 from sqlalchemy import func, or_, select
@@ -153,6 +155,29 @@ class AdminBulkOrganizationStatusChangeResult:
     results: list[AdminBulkOrganizationStatusChangeItem]
 
 
+@dataclass(slots=True)
+class AdminRiskReportItem:
+    organization_id: UUID
+    organization_name: str
+    organization_slug: str
+    status: OrganizationStatus
+    risk_score: int
+    risk_level: str
+    anomaly_count: int
+    critical_anomaly_count: int
+    warning_anomaly_count: int
+    info_anomaly_count: int
+    top_anomaly_codes: list[str]
+    active_members: int
+    active_auth_sessions: int
+    open_cases: int
+    archived_cases: int
+    failed_jobs: int
+    failed_webhook_deliveries: int
+    failed_emails: int
+    last_activity_at: datetime | None
+
+
 class AdminService:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -167,6 +192,19 @@ class AdminService:
         limit: int,
     ) -> list[AdminOrganizationListItem]:
         self._ensure_superuser(actor)
+        return self._fetch_organization_snapshots(
+            status=status,
+            search=search,
+            limit=limit,
+        )
+
+    def _fetch_organization_snapshots(
+        self,
+        *,
+        status: OrganizationStatus | None,
+        search: str | None,
+        limit: int | None,
+    ) -> list[AdminOrganizationListItem]:
         normalized_search = " ".join(search.split()).strip().lower() if search else None
         now = datetime.now(UTC)
 
@@ -268,8 +306,9 @@ class AdminService:
                 last_activity_at.label("last_activity_at"),
             )
             .order_by(Organization.created_at.desc())
-            .limit(limit)
         )
+        if limit is not None:
+            query = query.limit(limit)
 
         if status is not None:
             query = query.where(Organization.status == status)
@@ -585,17 +624,7 @@ class AdminService:
         limit: int,
     ) -> list[AdminAnomalyItem]:
         self._ensure_superuser(actor)
-        anomalies = [
-            *self._detect_organizations_without_active_owner(),
-            *self._detect_failed_job_anomalies(),
-            *self._detect_failed_webhook_anomalies(),
-            *self._detect_failed_email_anomalies(),
-            *self._detect_stale_processing_queue_anomalies(),
-            *self._detect_stale_webhook_queue_anomalies(),
-            *self._detect_stale_email_queue_anomalies(),
-            *self._detect_inactive_organization_api_key_anomalies(),
-            *self._detect_inactive_organization_session_anomalies(),
-        ]
+        anomalies = self._collect_anomalies()
         if severity is not None:
             anomalies = [item for item in anomalies if item.severity == severity]
         anomalies.sort(
@@ -607,6 +636,109 @@ class AdminService:
             )
         )
         return anomalies[:limit]
+
+    def list_risk_report(
+        self,
+        *,
+        actor: ActorContext,
+        status: OrganizationStatus | None,
+        search: str | None,
+        min_risk_score: int,
+        limit: int,
+    ) -> list[AdminRiskReportItem]:
+        self._ensure_superuser(actor)
+        organizations = self._fetch_organization_snapshots(
+            status=status,
+            search=search,
+            limit=None,
+        )
+        anomaly_index = self._index_anomalies_by_organization(self._collect_anomalies())
+
+        report = [
+            self._build_risk_report_item(
+                organization=item,
+                anomalies=anomaly_index.get(item.organization.id, []),
+            )
+            for item in organizations
+        ]
+        report = [item for item in report if item.risk_score >= min_risk_score]
+        report.sort(
+            key=lambda item: (
+                -item.risk_score,
+                self._risk_level_rank(item.risk_level),
+                -(item.last_activity_at.timestamp() if item.last_activity_at else 0),
+                item.organization_slug,
+            )
+        )
+        return report[:limit]
+
+    def export_organizations_csv(
+        self,
+        *,
+        actor: ActorContext,
+        status: OrganizationStatus | None,
+        search: str | None,
+        min_risk_score: int,
+        limit: int,
+    ) -> str:
+        report = self.list_risk_report(
+            actor=actor,
+            status=status,
+            search=search,
+            min_risk_score=min_risk_score,
+            limit=limit,
+        )
+        buffer = StringIO()
+        writer = csv.DictWriter(
+            buffer,
+            fieldnames=[
+                "organization_id",
+                "organization_name",
+                "organization_slug",
+                "status",
+                "risk_score",
+                "risk_level",
+                "anomaly_count",
+                "critical_anomaly_count",
+                "warning_anomaly_count",
+                "info_anomaly_count",
+                "top_anomaly_codes",
+                "active_members",
+                "active_auth_sessions",
+                "open_cases",
+                "archived_cases",
+                "failed_jobs",
+                "failed_webhook_deliveries",
+                "failed_emails",
+                "last_activity_at",
+            ],
+        )
+        writer.writeheader()
+        for item in report:
+            writer.writerow(
+                {
+                    "organization_id": str(item.organization_id),
+                    "organization_name": item.organization_name,
+                    "organization_slug": item.organization_slug,
+                    "status": item.status.value,
+                    "risk_score": item.risk_score,
+                    "risk_level": item.risk_level,
+                    "anomaly_count": item.anomaly_count,
+                    "critical_anomaly_count": item.critical_anomaly_count,
+                    "warning_anomaly_count": item.warning_anomaly_count,
+                    "info_anomaly_count": item.info_anomaly_count,
+                    "top_anomaly_codes": ",".join(item.top_anomaly_codes),
+                    "active_members": item.active_members,
+                    "active_auth_sessions": item.active_auth_sessions,
+                    "open_cases": item.open_cases,
+                    "archived_cases": item.archived_cases,
+                    "failed_jobs": item.failed_jobs,
+                    "failed_webhook_deliveries": item.failed_webhook_deliveries,
+                    "failed_emails": item.failed_emails,
+                    "last_activity_at": _serialize_datetime(item.last_activity_at),
+                }
+            )
+        return buffer.getvalue()
 
     def list_organization_activity(
         self,
@@ -915,6 +1047,69 @@ class AdminService:
             reverse=True,
         )
         return failures[:limit]
+
+    def _collect_anomalies(self) -> list[AdminAnomalyItem]:
+        return [
+            *self._detect_organizations_without_active_owner(),
+            *self._detect_failed_job_anomalies(),
+            *self._detect_failed_webhook_anomalies(),
+            *self._detect_failed_email_anomalies(),
+            *self._detect_stale_processing_queue_anomalies(),
+            *self._detect_stale_webhook_queue_anomalies(),
+            *self._detect_stale_email_queue_anomalies(),
+            *self._detect_inactive_organization_api_key_anomalies(),
+            *self._detect_inactive_organization_session_anomalies(),
+        ]
+
+    def _index_anomalies_by_organization(
+        self,
+        anomalies: list[AdminAnomalyItem],
+    ) -> dict[UUID, list[AdminAnomalyItem]]:
+        grouped: dict[UUID, list[AdminAnomalyItem]] = {}
+        for anomaly in anomalies:
+            grouped.setdefault(anomaly.organization_id, []).append(anomaly)
+        for items in grouped.values():
+            items.sort(
+                key=lambda item: (
+                    self._severity_rank(item.severity),
+                    -item.detected_at.timestamp(),
+                    item.code,
+                )
+            )
+        return grouped
+
+    def _build_risk_report_item(
+        self,
+        *,
+        organization: AdminOrganizationListItem,
+        anomalies: list[AdminAnomalyItem],
+    ) -> AdminRiskReportItem:
+        critical_count = sum(1 for item in anomalies if item.severity == "critical")
+        warning_count = sum(1 for item in anomalies if item.severity == "warning")
+        info_count = sum(1 for item in anomalies if item.severity == "info")
+        risk_score = sum(self._anomaly_weight(item.severity) for item in anomalies)
+        risk_level = self._risk_level_from_score(risk_score)
+        return AdminRiskReportItem(
+            organization_id=organization.organization.id,
+            organization_name=organization.organization.name,
+            organization_slug=organization.organization.slug,
+            status=organization.organization.status,
+            risk_score=risk_score,
+            risk_level=risk_level,
+            anomaly_count=len(anomalies),
+            critical_anomaly_count=critical_count,
+            warning_anomaly_count=warning_count,
+            info_anomaly_count=info_count,
+            top_anomaly_codes=[item.code for item in anomalies[:3]],
+            active_members=organization.active_members,
+            active_auth_sessions=organization.active_auth_sessions,
+            open_cases=organization.open_cases,
+            archived_cases=organization.archived_cases,
+            failed_jobs=organization.failed_jobs,
+            failed_webhook_deliveries=organization.failed_webhook_deliveries,
+            failed_emails=organization.failed_emails,
+            last_activity_at=organization.last_activity_at,
+        )
 
     def _detect_organizations_without_active_owner(self) -> list[AdminAnomalyItem]:
         active_owner_count = (
@@ -1288,3 +1483,37 @@ class AdminService:
     @staticmethod
     def _severity_rank(severity: str) -> int:
         return {"critical": 0, "warning": 1, "info": 2}.get(severity, 99)
+
+    @staticmethod
+    def _anomaly_weight(severity: str) -> int:
+        return {"critical": 50, "warning": 20, "info": 5}.get(severity, 0)
+
+    @classmethod
+    def _risk_level_from_score(cls, score: int) -> str:
+        if score >= 100:
+            return "critical"
+        if score >= 50:
+            return "high"
+        if score >= 20:
+            return "medium"
+        if score > 0:
+            return "low"
+        return "healthy"
+
+    @staticmethod
+    def _risk_level_rank(risk_level: str) -> int:
+        return {
+            "critical": 0,
+            "high": 1,
+            "medium": 2,
+            "low": 3,
+            "healthy": 4,
+        }.get(risk_level, 99)
+
+
+def _serialize_datetime(value: datetime | None) -> str:
+    if value is None:
+        return ""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC).isoformat()
+    return value.astimezone(UTC).isoformat()

@@ -168,3 +168,25 @@ class AdminAnomalyResponse(BaseModel):
     summary: str
     detected_at: datetime
     metadata: dict[str, object]
+
+
+class AdminRiskReportItemResponse(BaseModel):
+    organization_id: UUID
+    organization_name: str
+    organization_slug: str
+    status: OrganizationStatus
+    risk_score: int
+    risk_level: str
+    anomaly_count: int
+    critical_anomaly_count: int
+    warning_anomaly_count: int
+    info_anomaly_count: int
+    top_anomaly_codes: list[str]
+    active_members: int
+    active_auth_sessions: int
+    open_cases: int
+    archived_cases: int
+    failed_jobs: int
+    failed_webhook_deliveries: int
+    failed_emails: int
+    last_activity_at: datetime | None

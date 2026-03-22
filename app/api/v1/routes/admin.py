@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps.auth import SuperuserActor, get_current_superuser_actor
@@ -22,6 +23,7 @@ from app.api.v1.schemas.admin import (
     AdminOrganizationStatusChangeResponse,
     AdminOverviewResponse,
     AdminRetryDueResponse,
+    AdminRiskReportItemResponse,
 )
 from app.api.v1.schemas.audit import AuditLogResponse
 from app.api.v1.schemas.operations import OperationsFailureResponse
@@ -129,6 +131,71 @@ async def list_anomalies(
         )
         for item in anomalies
     ]
+
+
+@router.get("/risk-report", response_model=list[AdminRiskReportItemResponse])
+async def get_risk_report(
+    actor: SuperuserActorDep,
+    session: SessionDep,
+    status: Annotated[OrganizationStatus | None, Query()] = None,
+    search: Annotated[str | None, Query(min_length=1, max_length=120)] = None,
+    min_risk_score: Annotated[int, Query(ge=0, le=1_000)] = 0,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> list[AdminRiskReportItemResponse]:
+    report = AdminService(session).list_risk_report(
+        actor=actor,
+        status=status,
+        search=search,
+        min_risk_score=min_risk_score,
+        limit=limit,
+    )
+    return [
+        AdminRiskReportItemResponse(
+            organization_id=item.organization_id,
+            organization_name=item.organization_name,
+            organization_slug=item.organization_slug,
+            status=item.status,
+            risk_score=item.risk_score,
+            risk_level=item.risk_level,
+            anomaly_count=item.anomaly_count,
+            critical_anomaly_count=item.critical_anomaly_count,
+            warning_anomaly_count=item.warning_anomaly_count,
+            info_anomaly_count=item.info_anomaly_count,
+            top_anomaly_codes=item.top_anomaly_codes,
+            active_members=item.active_members,
+            active_auth_sessions=item.active_auth_sessions,
+            open_cases=item.open_cases,
+            archived_cases=item.archived_cases,
+            failed_jobs=item.failed_jobs,
+            failed_webhook_deliveries=item.failed_webhook_deliveries,
+            failed_emails=item.failed_emails,
+            last_activity_at=item.last_activity_at,
+        )
+        for item in report
+    ]
+
+
+@router.get("/exports/organizations.csv")
+async def export_organizations_csv(
+    actor: SuperuserActorDep,
+    session: SessionDep,
+    status: Annotated[OrganizationStatus | None, Query()] = None,
+    search: Annotated[str | None, Query(min_length=1, max_length=120)] = None,
+    min_risk_score: Annotated[int, Query(ge=0, le=1_000)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 200,
+) -> PlainTextResponse:
+    payload = AdminService(session).export_organizations_csv(
+        actor=actor,
+        status=status,
+        search=search,
+        min_risk_score=min_risk_score,
+        limit=limit,
+    )
+    return PlainTextResponse(
+        payload,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="organizations-risk-report.csv"'},
+    )
 
 
 @router.get("/organizations", response_model=list[AdminOrganizationListItemResponse])
