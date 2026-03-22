@@ -11,7 +11,12 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.api.v1.schemas.organizations import InvitationAcceptRequest, InvitationCreateRequest
 from app.application.actors import ActorContext
-from app.application.services.auth import AuthResult, build_auth_result, create_auth_session
+from app.application.services.auth import (
+    AuthClientContext,
+    AuthResult,
+    build_auth_result,
+    create_auth_session,
+)
 from app.core.config import get_settings
 from app.core.errors import ConflictError, DomainValidationError
 from app.domain.organizations.models import Invitation, OrganizationMembership, OrganizationRole
@@ -69,7 +74,12 @@ class InvitationService:
         self.session.refresh(invitation)
         return InvitationCreateResult(invitation=invitation, invitation_token=raw_token)
 
-    def accept_invitation(self, payload: InvitationAcceptRequest) -> AuthResult:
+    def accept_invitation(
+        self,
+        payload: InvitationAcceptRequest,
+        *,
+        client_context: AuthClientContext | None = None,
+    ) -> AuthResult:
         invitation = self.session.scalar(
             select(Invitation)
             .options(joinedload(Invitation.organization))
@@ -115,6 +125,7 @@ class InvitationService:
             organization=invitation.organization,
             membership=membership,
             settings=self.settings,
+            client_context=client_context,
         )
         user.last_login_at = datetime.now(UTC)
 

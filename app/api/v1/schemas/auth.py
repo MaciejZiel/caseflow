@@ -117,6 +117,14 @@ class MembershipResponse(BaseModel):
     joined_at: datetime
 
 
+class SessionOrganizationSummaryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    slug: str
+
+
 class SessionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -135,3 +143,17 @@ class AuthResponse(SessionResponse):
 
 class OperationStatusResponse(BaseModel):
     status: str
+
+
+class AuthSessionInfoResponse(BaseModel):
+    id: UUID
+    organization: SessionOrganizationSummaryResponse
+    role: OrganizationRole
+    client_ip: str | None
+    user_agent: str | None
+    refresh_token_expires_at: datetime
+    last_refreshed_at: datetime | None
+    revoked_at: datetime | None
+    revoke_reason: str | None
+    created_at: datetime
+    is_current: bool

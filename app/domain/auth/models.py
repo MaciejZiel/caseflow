@@ -30,6 +30,8 @@ class AuthSession(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     refresh_token_hash: Mapped[str] = mapped_column(String(64), unique=True)
     refresh_token_expires_at: Mapped[datetime]
+    client_ip: Mapped[str | None] = mapped_column(String(64))
+    user_agent: Mapped[str | None] = mapped_column(String(255))
     last_refreshed_at: Mapped[datetime | None]
     revoked_at: Mapped[datetime | None]
     revoke_reason: Mapped[str | None] = mapped_column(String(120))

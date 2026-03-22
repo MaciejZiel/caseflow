@@ -18,7 +18,7 @@ from app.api.v1.schemas.auth import (
     RegistrationRequest,
 )
 from app.core.config import get_settings
-from app.core.errors import AuthenticationError, ConflictError, DomainValidationError
+from app.core.errors import AuthenticationError, ConflictError, DomainValidationError, NotFoundError
 from app.domain.auth.models import AuthSession, PasswordResetToken
 from app.domain.organizations.models import (
     Organization,
@@ -30,6 +30,12 @@ from app.domain.users.models import User
 from app.infrastructure.security.opaque_tokens import generate_opaque_token, hash_opaque_token
 from app.infrastructure.security.passwords import hash_password, verify_password
 from app.infrastructure.security.tokens import create_access_token
+
+
+@dataclass(slots=True)
+class AuthClientContext:
+    client_ip: str | None
+    user_agent: str | None
 
 
 @dataclass(slots=True)
@@ -54,7 +60,12 @@ class AuthService:
         self.session = session
         self.settings = get_settings()
 
-    def register_organization_owner(self, payload: RegistrationRequest) -> AuthResult:
+    def register_organization_owner(
+        self,
+        payload: RegistrationRequest,
+        *,
+        client_context: AuthClientContext | None = None,
+    ) -> AuthResult:
         if self._email_exists(payload.email):
             raise ConflictError("email_already_in_use", "A user with this email already exists.")
         if self._organization_slug_exists(payload.organization_slug):
@@ -84,6 +95,7 @@ class AuthService:
             organization=organization,
             membership=membership,
             settings=self.settings,
+            client_context=client_context,
         )
         issued_at = datetime.now(UTC)
         user.last_login_at = issued_at
@@ -111,7 +123,12 @@ class AuthService:
             settings=self.settings,
         )
 
-    def login(self, payload: LoginRequest) -> AuthResult:
+    def login(
+        self,
+        payload: LoginRequest,
+        *,
+        client_context: AuthClientContext | None = None,
+    ) -> AuthResult:
         user = self.session.scalar(select(User).where(User.email == payload.email))
         if user is None or not verify_password(payload.password, user.password_hash):
             raise AuthenticationError("Invalid email or password.")
@@ -132,6 +149,7 @@ class AuthService:
             organization=membership.organization,
             membership=membership,
             settings=self.settings,
+            client_context=client_context,
         )
         user.last_login_at = datetime.now(UTC)
         self.session.add(auth_session)
@@ -147,7 +165,12 @@ class AuthService:
             settings=self.settings,
         )
 
-    def refresh_session(self, payload: RefreshTokenRequest) -> AuthResult:
+    def refresh_session(
+        self,
+        payload: RefreshTokenRequest,
+        *,
+        client_context: AuthClientContext | None = None,
+    ) -> AuthResult:
         auth_session = self.session.scalar(
             select(AuthSession)
             .options(
@@ -162,7 +185,11 @@ class AuthService:
 
         self._ensure_auth_session_is_active(auth_session)
 
-        refresh_token = rotate_auth_session(auth_session=auth_session, settings=self.settings)
+        refresh_token = rotate_auth_session(
+            auth_session=auth_session,
+            settings=self.settings,
+            client_context=client_context,
+        )
         auth_session.user.last_login_at = datetime.now(UTC)
         self.session.commit()
 
@@ -194,6 +221,47 @@ class AuthService:
             auth_session.revoked_at = now
             auth_session.revoke_reason = "logout_all"
         self.session.commit()
+
+    def list_user_sessions(
+        self,
+        *,
+        user: User,
+    ) -> list[AuthSession]:
+        return list(
+            self.session.scalars(
+                select(AuthSession)
+                .options(
+                    joinedload(AuthSession.organization),
+                    joinedload(AuthSession.membership),
+                )
+                .where(AuthSession.user_id == user.id)
+                .order_by(
+                    AuthSession.revoked_at.is_not(None).asc(),
+                    AuthSession.created_at.desc(),
+                )
+            )
+        )
+
+    def revoke_session(
+        self,
+        *,
+        user: User,
+        session_id: UUID,
+    ) -> AuthSession:
+        auth_session = self.session.scalar(
+            select(AuthSession)
+            .where(
+                AuthSession.id == session_id,
+                AuthSession.user_id == user.id,
+            )
+        )
+        if auth_session is None:
+            raise NotFoundError("auth_session", "Authentication session does not exist.")
+        if auth_session.revoked_at is None:
+            auth_session.revoked_at = datetime.now(UTC)
+            auth_session.revoke_reason = "session_revoked"
+            self.session.commit()
+        return auth_session
 
     def request_password_reset(self, payload: PasswordResetRequest) -> OperationStatusResult:
         user = self.session.scalar(select(User).where(User.email == payload.email))
@@ -369,6 +437,7 @@ def create_auth_session(
     organization: Organization,
     membership: OrganizationMembership,
     settings=None,
+    client_context: AuthClientContext | None = None,
 ) -> tuple[AuthSession, str]:
     settings = settings or get_settings()
     refresh_token = generate_opaque_token()
@@ -379,11 +448,18 @@ def create_auth_session(
         refresh_token_hash=hash_opaque_token(refresh_token),
         refresh_token_expires_at=datetime.now(UTC)
         + timedelta(days=settings.refresh_token_ttl_days),
+        client_ip=client_context.client_ip if client_context else None,
+        user_agent=client_context.user_agent if client_context else None,
     )
     return auth_session, refresh_token
 
 
-def rotate_auth_session(*, auth_session: AuthSession, settings=None) -> str:
+def rotate_auth_session(
+    *,
+    auth_session: AuthSession,
+    settings=None,
+    client_context: AuthClientContext | None = None,
+) -> str:
     settings = settings or get_settings()
     refresh_token = generate_opaque_token()
     auth_session.refresh_token_hash = hash_opaque_token(refresh_token)
@@ -391,6 +467,9 @@ def rotate_auth_session(*, auth_session: AuthSession, settings=None) -> str:
         days=settings.refresh_token_ttl_days
     )
     auth_session.last_refreshed_at = datetime.now(UTC)
+    if client_context is not None:
+        auth_session.client_ip = client_context.client_ip
+        auth_session.user_agent = client_context.user_agent
     return refresh_token
 
 
