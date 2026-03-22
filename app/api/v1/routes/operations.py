@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 from app.api.deps.auth import CurrentActor, get_current_actor
 from app.api.v1.schemas.operations import (
     OperationsFailureResponse,
+    OperationsRetentionPreviewResponse,
+    OperationsRetentionRunResponse,
     OperationsRetryDueResponse,
     OperationsSummaryResponse,
 )
@@ -56,3 +58,21 @@ async def retry_due_operations(
         limit_per_queue=limit_per_queue,
     )
     return OperationsRetryDueResponse.model_validate(result, from_attributes=True)
+
+
+@router.get("/retention-preview", response_model=OperationsRetentionPreviewResponse)
+async def preview_operations_retention(
+    actor: CurrentActorDep,
+    session: SessionDep,
+) -> OperationsRetentionPreviewResponse:
+    result = OperationsService(session).preview_retention_cleanup(actor=actor)
+    return OperationsRetentionPreviewResponse.model_validate(result, from_attributes=True)
+
+
+@router.post("/retention-run", response_model=OperationsRetentionRunResponse)
+async def run_operations_retention(
+    actor: CurrentActorDep,
+    session: SessionDep,
+) -> OperationsRetentionRunResponse:
+    result = OperationsService(session).run_retention_cleanup(actor=actor)
+    return OperationsRetentionRunResponse.model_validate(result, from_attributes=True)

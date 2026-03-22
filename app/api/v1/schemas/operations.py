@@ -38,3 +38,15 @@ class OperationsRetryDueResponse(BaseModel):
     processed_document_jobs: int
     processed_webhook_deliveries: int
     processed_emails: int
+
+
+class OperationsRetentionPreviewResponse(BaseModel):
+    webhook_deliveries_ready_for_cleanup: int
+    outbound_emails_ready_for_cleanup: int
+    webhook_delivery_cutoff: datetime
+    outbound_email_cutoff: datetime
+
+
+class OperationsRetentionRunResponse(BaseModel):
+    deleted_webhook_deliveries: int
+    deleted_outbound_emails: int

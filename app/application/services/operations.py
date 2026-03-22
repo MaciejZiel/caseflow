@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.application.actors import ActorContext
 from app.application.services.documents import DocumentService
 from app.application.services.emails import EmailOutboxService
 from app.application.services.webhooks import WebhookService
+from app.core.config import get_settings
 from app.core.errors import PermissionDeniedError
 from app.domain.api_keys.models import ApiKey
 from app.domain.cases.models import Case, CaseStatus
@@ -33,6 +34,20 @@ class OperationsRetryDueResult:
 
 
 @dataclass(slots=True)
+class OperationsRetentionPreview:
+    webhook_deliveries_ready_for_cleanup: int
+    outbound_emails_ready_for_cleanup: int
+    webhook_delivery_cutoff: datetime
+    outbound_email_cutoff: datetime
+
+
+@dataclass(slots=True)
+class OperationsRetentionRunResult:
+    deleted_webhook_deliveries: int
+    deleted_outbound_emails: int
+
+
+@dataclass(slots=True)
 class OperationsFailureItem:
     source: str
     id: UUID
@@ -49,6 +64,7 @@ class OperationsFailureItem:
 class OperationsService:
     def __init__(self, session: Session) -> None:
         self.session = session
+        self.settings = get_settings()
 
     def get_summary(self, *, actor: ActorContext) -> dict[str, object]:
         self._ensure_manage_permission(actor)
@@ -241,6 +257,66 @@ class OperationsService:
             processed_document_jobs=processed_document_jobs,
             processed_webhook_deliveries=processed_webhook_deliveries,
             processed_emails=processed_emails,
+        )
+
+    def preview_retention_cleanup(self, *, actor: ActorContext) -> OperationsRetentionPreview:
+        self._ensure_manage_permission(actor)
+        webhook_cutoff = datetime.now(UTC) - timedelta(
+            days=self.settings.webhook_delivery_retention_days
+        )
+        email_cutoff = datetime.now(UTC) - timedelta(
+            days=self.settings.outbound_email_retention_days
+        )
+        return OperationsRetentionPreview(
+            webhook_deliveries_ready_for_cleanup=self.session.scalar(
+                select(func.count())
+                .select_from(WebhookDelivery)
+                .where(
+                    WebhookDelivery.organization_id == actor.organization.id,
+                    WebhookDelivery.status == WebhookDeliveryStatus.DELIVERED,
+                    WebhookDelivery.delivered_at.is_not(None),
+                    WebhookDelivery.delivered_at < webhook_cutoff,
+                )
+            )
+            or 0,
+            outbound_emails_ready_for_cleanup=self.session.scalar(
+                select(func.count())
+                .select_from(OutboundEmail)
+                .where(
+                    OutboundEmail.organization_id == actor.organization.id,
+                    OutboundEmail.status == OutboundEmailStatus.SENT,
+                    OutboundEmail.sent_at.is_not(None),
+                    OutboundEmail.sent_at < email_cutoff,
+                )
+            )
+            or 0,
+            webhook_delivery_cutoff=webhook_cutoff,
+            outbound_email_cutoff=email_cutoff,
+        )
+
+    def run_retention_cleanup(self, *, actor: ActorContext) -> OperationsRetentionRunResult:
+        self._ensure_manage_permission(actor)
+        preview = self.preview_retention_cleanup(actor=actor)
+        webhook_delete = self.session.execute(
+            delete(WebhookDelivery).where(
+                WebhookDelivery.organization_id == actor.organization.id,
+                WebhookDelivery.status == WebhookDeliveryStatus.DELIVERED,
+                WebhookDelivery.delivered_at.is_not(None),
+                WebhookDelivery.delivered_at < preview.webhook_delivery_cutoff,
+            )
+        )
+        email_delete = self.session.execute(
+            delete(OutboundEmail).where(
+                OutboundEmail.organization_id == actor.organization.id,
+                OutboundEmail.status == OutboundEmailStatus.SENT,
+                OutboundEmail.sent_at.is_not(None),
+                OutboundEmail.sent_at < preview.outbound_email_cutoff,
+            )
+        )
+        self.session.commit()
+        return OperationsRetentionRunResult(
+            deleted_webhook_deliveries=webhook_delete.rowcount or 0,
+            deleted_outbound_emails=email_delete.rowcount or 0,
         )
 
     def _group_counts(self, *, model, organization_id: UUID, group_column) -> dict[str, int]:

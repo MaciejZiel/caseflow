@@ -37,6 +37,14 @@ class Settings(BaseSettings):
         default=60,
         alias="AUTH_SESSION_ACTIVITY_UPDATE_INTERVAL_SECONDS",
     )
+    webhook_delivery_retention_days: int = Field(
+        default=30,
+        alias="WEBHOOK_DELIVERY_RETENTION_DAYS",
+    )
+    outbound_email_retention_days: int = Field(
+        default=30,
+        alias="OUTBOUND_EMAIL_RETENTION_DAYS",
+    )
     document_processing_mode: Literal["inline", "worker"] = Field(
         default="inline",
         alias="DOCUMENT_PROCESSING_MODE",
