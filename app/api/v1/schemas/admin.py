@@ -78,3 +78,36 @@ class AdminOrganizationStatusChangeResponse(BaseModel):
     current_status: OrganizationStatus
     revoked_auth_sessions: int
     reason: str | None
+
+
+class AdminOverviewResponse(BaseModel):
+    total_organizations: int
+    organizations_by_status: dict[str, int]
+    active_auth_sessions: int
+    active_api_keys: int
+    open_cases: int
+    failed_jobs: int
+    failed_webhook_deliveries: int
+    failed_emails: int
+
+
+class AdminFailureResponse(BaseModel):
+    organization_id: UUID
+    organization_name: str
+    organization_slug: str
+    source: str
+    id: UUID
+    status: str
+    summary: str
+    reference_id: UUID | None
+    reference_label: str | None
+    attempts: int
+    last_error: str | None
+    next_retry_at: datetime | None
+    created_at: datetime
+
+
+class AdminRetryDueResponse(BaseModel):
+    processed_document_jobs: int
+    processed_webhook_deliveries: int
+    processed_emails: int

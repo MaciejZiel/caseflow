@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -11,10 +11,13 @@ from sqlalchemy.orm import Session
 from app.api.deps.auth import SuperuserActor, get_current_superuser_actor
 from app.api.v1.schemas.admin import (
     AdminAuditEventResponse,
+    AdminFailureResponse,
     AdminOrganizationDetailResponse,
     AdminOrganizationListItemResponse,
     AdminOrganizationStatusChangeRequest,
     AdminOrganizationStatusChangeResponse,
+    AdminOverviewResponse,
+    AdminRetryDueResponse,
 )
 from app.api.v1.schemas.operations import OperationsFailureResponse
 from app.application.services.admin import AdminService
@@ -24,6 +27,76 @@ from app.infrastructure.db.session import get_db_session
 router = APIRouter(prefix="/admin")
 SessionDep = Annotated[Session, Depends(get_db_session)]
 SuperuserActorDep = Annotated[SuperuserActor, Depends(get_current_superuser_actor)]
+
+
+@router.get("/overview", response_model=AdminOverviewResponse)
+async def get_overview(
+    actor: SuperuserActorDep,
+    session: SessionDep,
+) -> AdminOverviewResponse:
+    overview = AdminService(session).get_overview(actor=actor)
+    return AdminOverviewResponse(
+        total_organizations=overview.total_organizations,
+        organizations_by_status=overview.organizations_by_status,
+        active_auth_sessions=overview.active_auth_sessions,
+        active_api_keys=overview.active_api_keys,
+        open_cases=overview.open_cases,
+        failed_jobs=overview.failed_jobs,
+        failed_webhook_deliveries=overview.failed_webhook_deliveries,
+        failed_emails=overview.failed_emails,
+    )
+
+
+@router.get("/failures", response_model=list[AdminFailureResponse])
+async def list_recent_failures(
+    actor: SuperuserActorDep,
+    session: SessionDep,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+    source: Annotated[
+        Literal["processing_job", "webhook_delivery", "outbound_email"] | None,
+        Query(),
+    ] = None,
+) -> list[AdminFailureResponse]:
+    failures = AdminService(session).list_recent_failures(
+        actor=actor,
+        limit=limit,
+        source=source,
+    )
+    return [
+        AdminFailureResponse(
+            organization_id=item.organization_id,
+            organization_name=item.organization_name,
+            organization_slug=item.organization_slug,
+            source=item.source,
+            id=item.id,
+            status=item.status,
+            summary=item.summary,
+            reference_id=item.reference_id,
+            reference_label=item.reference_label,
+            attempts=item.attempts,
+            last_error=item.last_error,
+            next_retry_at=item.next_retry_at,
+            created_at=item.created_at,
+        )
+        for item in failures
+    ]
+
+
+@router.post("/retry-due", response_model=AdminRetryDueResponse)
+async def retry_due_items(
+    actor: SuperuserActorDep,
+    session: SessionDep,
+    limit_per_queue: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> AdminRetryDueResponse:
+    result = AdminService(session).retry_due_items(
+        actor=actor,
+        limit_per_queue=limit_per_queue,
+    )
+    return AdminRetryDueResponse(
+        processed_document_jobs=result.processed_document_jobs,
+        processed_webhook_deliveries=result.processed_webhook_deliveries,
+        processed_emails=result.processed_emails,
+    )
 
 
 @router.get("/organizations", response_model=list[AdminOrganizationListItemResponse])

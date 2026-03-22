@@ -10,8 +10,11 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.application.actors import ActorContext
+from app.application.services.documents import DocumentService
+from app.application.services.emails import EmailOutboxService
 from app.application.services.events import EventPublisher
 from app.application.services.operations import OperationsFailureItem
+from app.application.services.webhooks import WebhookService
 from app.core.errors import DomainValidationError, NotFoundError, PermissionDeniedError
 from app.domain.api_keys.models import ApiKey
 from app.domain.audit.models import AuditLog
@@ -72,6 +75,42 @@ class AdminOrganizationStatusChangeResult:
     current_status: OrganizationStatus
     revoked_auth_sessions: int
     reason: str | None
+
+
+@dataclass(slots=True)
+class AdminOverview:
+    total_organizations: int
+    organizations_by_status: dict[str, int]
+    active_auth_sessions: int
+    active_api_keys: int
+    open_cases: int
+    failed_jobs: int
+    failed_webhook_deliveries: int
+    failed_emails: int
+
+
+@dataclass(slots=True)
+class AdminFailureItem:
+    organization_id: UUID
+    organization_name: str
+    organization_slug: str
+    source: str
+    id: UUID
+    status: str
+    summary: str
+    reference_id: UUID | None
+    reference_label: str | None
+    attempts: int
+    last_error: str | None
+    next_retry_at: datetime | None
+    created_at: datetime
+
+
+@dataclass(slots=True)
+class AdminRetryDueResult:
+    processed_document_jobs: int
+    processed_webhook_deliveries: int
+    processed_emails: int
 
 
 class AdminService:
@@ -326,6 +365,175 @@ class AdminService:
             ),
             recent_audit_events=recent_audit_events,
             last_activity_at=recent_audit_events[0].created_at if recent_audit_events else None,
+        )
+
+    def get_overview(self, *, actor: ActorContext) -> AdminOverview:
+        self._ensure_superuser(actor)
+        now = datetime.now(UTC)
+        organizations_by_status = {
+            status.value: count
+            for status, count in self.session.execute(
+                select(Organization.status, func.count())
+                .select_from(Organization)
+                .group_by(Organization.status)
+            )
+        }
+        return AdminOverview(
+            total_organizations=self._count_rows(select(func.count(Organization.id))),
+            organizations_by_status=organizations_by_status,
+            active_auth_sessions=self._count_rows(
+                select(func.count(AuthSession.id))
+                .select_from(AuthSession)
+                .join(AuthSession.user)
+                .join(AuthSession.membership)
+                .where(
+                    AuthSession.revoked_at.is_(None),
+                    AuthSession.refresh_token_expires_at > now,
+                    User.is_active.is_(True),
+                    OrganizationMembership.is_active.is_(True),
+                )
+            ),
+            active_api_keys=self._count_rows(
+                select(func.count(ApiKey.id)).where(
+                    ApiKey.revoked_at.is_(None),
+                    or_(ApiKey.expires_at.is_(None), ApiKey.expires_at > now),
+                )
+            ),
+            open_cases=self._count_rows(
+                select(func.count(Case.id)).where(Case.status != CaseStatus.ARCHIVED)
+            ),
+            failed_jobs=self._count_rows(
+                select(func.count(ProcessingJob.id)).where(
+                    ProcessingJob.status.in_(
+                        [ProcessingJobStatus.FAILED, ProcessingJobStatus.DEAD_LETTERED]
+                    )
+                )
+            ),
+            failed_webhook_deliveries=self._count_rows(
+                select(func.count(WebhookDelivery.id)).where(
+                    WebhookDelivery.status == WebhookDeliveryStatus.FAILED
+                )
+            ),
+            failed_emails=self._count_rows(
+                select(func.count(OutboundEmail.id)).where(
+                    OutboundEmail.status == OutboundEmailStatus.FAILED
+                )
+            ),
+        )
+
+    def list_recent_failures(
+        self,
+        *,
+        actor: ActorContext,
+        limit: int,
+        source: str | None,
+    ) -> list[AdminFailureItem]:
+        self._ensure_superuser(actor)
+
+        failures: list[AdminFailureItem] = []
+        if source in (None, "processing_job"):
+            failures.extend(
+                AdminFailureItem(
+                    organization_id=job.organization_id,
+                    organization_name=organization_name,
+                    organization_slug=organization_slug,
+                    source="processing_job",
+                    id=job.id,
+                    status=job.status.value,
+                    summary=job.job_type.value,
+                    reference_id=job.document_id,
+                    reference_label="document_id",
+                    attempts=job.attempts,
+                    last_error=job.last_error,
+                    next_retry_at=job.next_retry_at,
+                    created_at=job.created_at,
+                )
+                for job, organization_name, organization_slug in self.session.execute(
+                    select(ProcessingJob, Organization.name, Organization.slug)
+                    .join(Organization, ProcessingJob.organization_id == Organization.id)
+                    .where(
+                        ProcessingJob.status.in_(
+                            [ProcessingJobStatus.FAILED, ProcessingJobStatus.DEAD_LETTERED]
+                        )
+                    )
+                    .order_by(ProcessingJob.created_at.desc())
+                    .limit(limit)
+                )
+            )
+        if source in (None, "webhook_delivery"):
+            failures.extend(
+                AdminFailureItem(
+                    organization_id=delivery.organization_id,
+                    organization_name=organization_name,
+                    organization_slug=organization_slug,
+                    source="webhook_delivery",
+                    id=delivery.id,
+                    status=delivery.status.value,
+                    summary=delivery.event_type,
+                    reference_id=delivery.endpoint_id,
+                    reference_label="endpoint_id",
+                    attempts=delivery.attempts,
+                    last_error=delivery.response_body_excerpt,
+                    next_retry_at=delivery.next_retry_at,
+                    created_at=delivery.created_at,
+                )
+                for delivery, organization_name, organization_slug in self.session.execute(
+                    select(WebhookDelivery, Organization.name, Organization.slug)
+                    .join(Organization, WebhookDelivery.organization_id == Organization.id)
+                    .where(WebhookDelivery.status == WebhookDeliveryStatus.FAILED)
+                    .order_by(WebhookDelivery.created_at.desc())
+                    .limit(limit)
+                )
+            )
+        if source in (None, "outbound_email"):
+            failures.extend(
+                AdminFailureItem(
+                    organization_id=email.organization_id,
+                    organization_name=organization_name,
+                    organization_slug=organization_slug,
+                    source="outbound_email",
+                    id=email.id,
+                    status=email.status.value,
+                    summary=email.template_key,
+                    reference_id=None,
+                    reference_label=email.recipient_email,
+                    attempts=email.attempts,
+                    last_error=email.last_error,
+                    next_retry_at=email.next_retry_at,
+                    created_at=email.created_at,
+                )
+                for email, organization_name, organization_slug in self.session.execute(
+                    select(OutboundEmail, Organization.name, Organization.slug)
+                    .join(Organization, OutboundEmail.organization_id == Organization.id)
+                    .where(OutboundEmail.status == OutboundEmailStatus.FAILED)
+                    .order_by(OutboundEmail.created_at.desc())
+                    .limit(limit)
+                )
+            )
+
+        failures.sort(key=lambda item: item.created_at, reverse=True)
+        return failures[:limit]
+
+    def retry_due_items(
+        self,
+        *,
+        actor: ActorContext,
+        limit_per_queue: int,
+    ) -> AdminRetryDueResult:
+        self._ensure_superuser(actor)
+        processed_document_jobs = len(
+            DocumentService(self.session).process_due_jobs(limit=limit_per_queue)
+        )
+        processed_webhook_deliveries = len(
+            WebhookService(self.session).process_due_deliveries(limit=limit_per_queue)
+        )
+        processed_emails = len(
+            EmailOutboxService(self.session).process_due_emails(limit=limit_per_queue)
+        )
+        return AdminRetryDueResult(
+            processed_document_jobs=processed_document_jobs,
+            processed_webhook_deliveries=processed_webhook_deliveries,
+            processed_emails=processed_emails,
         )
 
     def suspend_organization(

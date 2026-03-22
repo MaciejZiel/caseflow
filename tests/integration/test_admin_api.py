@@ -10,6 +10,7 @@ from app.application.services import webhooks as webhook_module
 from app.infrastructure.email.local import LocalEmailSink
 from tests.integration.helpers import (
     accept_invitation,
+    configured_async_client,
     create_case,
     create_invitation,
     encode_document_content,
@@ -287,3 +288,216 @@ async def test_suspended_organization_invitation_cannot_be_accepted(
     )
     assert accepted["status_code"] == 400
     assert accepted["body"]["error"]["code"] == "organization_inactive"
+
+
+@pytest.mark.asyncio
+async def test_platform_admin_overview_and_failures_surface_cross_tenant_state(
+    async_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def failing_urlopen(req: Any, timeout: int = 0) -> _FakeWebhookResponse:
+        raise error.URLError("connection refused")
+
+    def failing_email_deliver(self, email) -> str:
+        raise RuntimeError("smtp offline")
+
+    monkeypatch.setattr(webhook_module.request, "urlopen", failing_urlopen)
+    monkeypatch.setattr(LocalEmailSink, "deliver", failing_email_deliver)
+
+    admin = await register_owner(
+        async_client,
+        organization_name="Platform Admins",
+        organization_slug="platform-admins",
+        email="root@example.com",
+    )
+    promote_user_to_superuser(email=admin["email"])
+
+    tenant = await register_owner(
+        async_client,
+        organization_name="Omega Claims",
+        organization_slug="omega-claims",
+        email="owner@omega.example.com",
+    )
+    suspended_tenant = await register_owner(
+        async_client,
+        organization_name="Dormant Claims",
+        organization_slug="dormant-claims",
+        email="owner@dormant.example.com",
+    )
+
+    suspend_response = await async_client.post(
+        f"/api/v1/admin/organizations/{suspended_tenant['organization_id']}/suspend",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        json={"reason": "compliance hold"},
+    )
+    assert suspend_response.status_code == 200
+
+    created_endpoint = await async_client.post(
+        "/api/v1/webhooks/endpoints",
+        headers={"Authorization": f"Bearer {tenant['access_token']}"},
+        json={
+            "target_url": "https://omega.example.test/webhook",
+            "signing_secret": "omega-webhook-secret-1234567890",
+            "subscribed_event_types": ["case.created"],
+        },
+    )
+    assert created_endpoint.status_code == 201
+
+    case = await create_case(
+        async_client,
+        access_token=tenant["access_token"],
+        title="Platform-wide failure feed",
+    )
+    created_document = await async_client.post(
+        f"/api/v1/cases/{case['id']}/documents",
+        headers={"Authorization": f"Bearer {tenant['access_token']}"},
+        json={
+            "title": "Broken platform payload",
+            "document_type": "attachment",
+            "original_filename": "broken.txt",
+            "mime_type": "text/plain",
+            "content_base64": encode_document_content(b"FAIL_PROCESSING broken payload"),
+        },
+    )
+    assert created_document.status_code == 201
+
+    await create_invitation(
+        async_client,
+        access_token=tenant["access_token"],
+        email="ops@omega.example.com",
+        role="member",
+    )
+
+    overview = await async_client.get(
+        "/api/v1/admin/overview",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+    )
+    assert overview.status_code == 200
+    overview_body = overview.json()
+    assert overview_body["total_organizations"] == 3
+    assert overview_body["organizations_by_status"]["active"] == 2
+    assert overview_body["organizations_by_status"]["suspended"] == 1
+    assert overview_body["failed_jobs"] >= 1
+    assert overview_body["failed_webhook_deliveries"] >= 1
+    assert overview_body["failed_emails"] >= 1
+
+    failures = await async_client.get(
+        "/api/v1/admin/failures",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+    )
+    assert failures.status_code == 200
+    failure_body = failures.json()
+    assert {item["source"] for item in failure_body} >= {
+        "processing_job",
+        "webhook_delivery",
+        "outbound_email",
+    }
+    assert {item["organization_slug"] for item in failure_body} >= {"omega-claims"}
+
+    webhook_only = await async_client.get(
+        "/api/v1/admin/failures",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        params={"source": "webhook_delivery"},
+    )
+    assert webhook_only.status_code == 200
+    assert {item["source"] for item in webhook_only.json()} == {"webhook_delivery"}
+
+
+@pytest.mark.asyncio
+async def test_platform_admin_retry_due_processes_global_queues(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_requests: list[dict[str, Any]] = []
+
+    def successful_urlopen(req: Any, timeout: int = 0) -> _FakeWebhookResponse:
+        captured_requests.append(
+            {
+                "url": req.full_url,
+                "headers": dict(req.header_items()),
+                "data": req.data,
+            }
+        )
+        return _FakeWebhookResponse(status=200, body=b'{"ok":true}')
+
+    monkeypatch.setattr(webhook_module.request, "urlopen", successful_urlopen)
+
+    async with configured_async_client(
+        tmp_path,
+        monkeypatch,
+        env_overrides={
+            "DOCUMENT_PROCESSING_MODE": "worker",
+            "WEBHOOK_DELIVERY_MODE": "worker",
+            "EMAIL_DELIVERY_MODE": "worker",
+        },
+    ) as async_client:
+        admin = await register_owner(
+            async_client,
+            organization_name="Platform Admins",
+            organization_slug="platform-admins",
+            email="root@example.com",
+        )
+        promote_user_to_superuser(email=admin["email"])
+
+        first_tenant = await register_owner(
+            async_client,
+            organization_name="Alpha Claims",
+            organization_slug="alpha-claims",
+            email="owner@alpha.example.com",
+        )
+        second_tenant = await register_owner(
+            async_client,
+            organization_name="Beta Claims",
+            organization_slug="beta-claims",
+            email="owner@beta.example.com",
+        )
+
+        for tenant in (first_tenant, second_tenant):
+            created_endpoint = await async_client.post(
+                "/api/v1/webhooks/endpoints",
+                headers={"Authorization": f"Bearer {tenant['access_token']}"},
+                json={
+                    "target_url": f"https://{tenant['organization_slug']}.example.test/webhook",
+                    "signing_secret": "platform-retry-secret-1234567890",
+                    "subscribed_event_types": ["case.created"],
+                },
+            )
+            assert created_endpoint.status_code == 201
+
+            case = await create_case(
+                async_client,
+                access_token=tenant["access_token"],
+                title=f"Queued work for {tenant['organization_slug']}",
+            )
+            created_document = await async_client.post(
+                f"/api/v1/cases/{case['id']}/documents",
+                headers={"Authorization": f"Bearer {tenant['access_token']}"},
+                json={
+                    "title": "Queued document",
+                    "document_type": "attachment",
+                    "original_filename": "queued.txt",
+                    "mime_type": "text/plain",
+                    "content_base64": encode_document_content(b"queued worker content"),
+                },
+            )
+            assert created_document.status_code == 201
+
+            await create_invitation(
+                async_client,
+                access_token=tenant["access_token"],
+                email=f"invite-{tenant['organization_slug']}@example.com",
+                role="member",
+            )
+
+        retried = await async_client.post(
+            "/api/v1/admin/retry-due",
+            headers={"Authorization": f"Bearer {admin['access_token']}"},
+            params={"limit_per_queue": 10},
+        )
+
+        assert retried.status_code == 200
+        retried_body = retried.json()
+        assert retried_body["processed_document_jobs"] == 2
+        assert retried_body["processed_webhook_deliveries"] == 2
+        assert retried_body["processed_emails"] == 2
+        assert len(captured_requests) == 2
