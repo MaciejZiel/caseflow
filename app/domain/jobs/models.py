@@ -54,6 +54,7 @@ class ProcessingJob(UUIDPrimaryKeyMixin, Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     scheduled_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))

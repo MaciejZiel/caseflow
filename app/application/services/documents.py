@@ -5,11 +5,11 @@ from __future__ import annotations
 import base64
 import binascii
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.schemas.documents import (
@@ -291,6 +291,38 @@ class DocumentService:
             )
         )
 
+    def process_due_jobs(self, *, limit: int = 50) -> list[UUID]:
+        now = datetime.now(UTC)
+        job_ids = list(
+            self.session.scalars(
+                select(ProcessingJob.id)
+                .where(
+                    or_(
+                        and_(
+                            ProcessingJob.status == ProcessingJobStatus.QUEUED,
+                            ProcessingJob.scheduled_at <= now,
+                        ),
+                        and_(
+                            ProcessingJob.status == ProcessingJobStatus.FAILED,
+                            ProcessingJob.next_retry_at.is_not(None),
+                            ProcessingJob.next_retry_at <= now,
+                        ),
+                    )
+                )
+                .order_by(
+                    func.coalesce(
+                        ProcessingJob.next_retry_at,
+                        ProcessingJob.scheduled_at,
+                        ProcessingJob.created_at,
+                    ).asc()
+                )
+                .limit(limit)
+            )
+        )
+        for job_id in job_ids:
+            self.process_document_job(job_id=job_id)
+        return job_ids
+
     def approve_document(
         self,
         *,
@@ -357,6 +389,7 @@ class DocumentService:
         job.last_error = None
         document.status = DocumentStatus.PROCESSING
         version.processing_status = DocumentProcessingStatus.PROCESSING
+        job.next_retry_at = None
         self.session.commit()
 
         try:
@@ -388,6 +421,7 @@ class DocumentService:
         version.extracted_payload_json = extracted_payload
         job.status = ProcessingJobStatus.SUCCEEDED
         job.finished_at = datetime.now(UTC)
+        job.next_retry_at = None
         case.status = CaseStatus.IN_REVIEW
         delivery_ids = self.publisher.record_event(
             organization_id=document.organization_id,
@@ -451,13 +485,12 @@ class DocumentService:
         if document is None or version is None:
             raise NotFoundError("document", "Document does not exist.")
 
-        document.status = DocumentStatus.QUEUED
-        version.processing_status = DocumentProcessingStatus.QUEUED
-        job.status = ProcessingJobStatus.QUEUED
-        job.last_error = None
-        job.started_at = None
-        job.finished_at = None
-        job.scheduled_at = datetime.now(UTC)
+        self._reset_job_for_retry(
+            job=job,
+            document=document,
+            version=version,
+            scheduled_at=datetime.now(UTC),
+        )
         self.session.commit()
 
         self.process_document_job(job_id=job.id)
@@ -686,6 +719,15 @@ class DocumentService:
             if job.attempts >= job.max_attempts
             else ProcessingJobStatus.FAILED
         )
+        job.next_retry_at = (
+            None
+            if job.status == ProcessingJobStatus.DEAD_LETTERED
+            else datetime.now(UTC)
+            + timedelta(
+                seconds=self.settings.job_retry_base_delay_seconds
+                * (2 ** max(job.attempts - 1, 0))
+            )
+        )
         document.status = DocumentStatus.FAILED
         version.processing_status = DocumentProcessingStatus.FAILED
         case.status = CaseStatus.WAITING_FOR_DOCUMENTS
@@ -712,6 +754,23 @@ class DocumentService:
         )
         self.session.commit()
         WebhookService(self.session).dispatch_deliveries(delivery_ids)
+
+    def _reset_job_for_retry(
+        self,
+        *,
+        job: ProcessingJob,
+        document: Document,
+        version: DocumentVersion,
+        scheduled_at: datetime,
+    ) -> None:
+        document.status = DocumentStatus.QUEUED
+        version.processing_status = DocumentProcessingStatus.QUEUED
+        job.status = ProcessingJobStatus.QUEUED
+        job.last_error = None
+        job.started_at = None
+        job.finished_at = None
+        job.scheduled_at = scheduled_at
+        job.next_retry_at = None
 
     def _extract_payload(
         self,

@@ -20,6 +20,7 @@ from app.api.v1.schemas.webhooks import (
 )
 from app.application.actors import ActorContext
 from app.application.services.events import EventPublisher
+from app.core.config import get_settings
 from app.core.errors import DomainValidationError, NotFoundError
 from app.domain.organizations.models import OrganizationRole
 from app.domain.organizations.policies import ensure_role_allowed
@@ -38,6 +39,7 @@ class WebhookService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.publisher = EventPublisher(session)
+        self.settings = get_settings()
 
     def create_endpoint(
         self,
@@ -185,14 +187,35 @@ class WebhookService:
                 "Only failed webhook deliveries can be retried.",
             )
 
-        delivery.status = WebhookDeliveryStatus.PENDING
-        delivery.http_status = None
-        delivery.response_body_excerpt = None
-        delivery.next_retry_at = None
+        self._reset_delivery_for_retry(delivery)
         self.session.commit()
         self.dispatch_deliveries([delivery.id])
         self.session.refresh(delivery)
         return delivery
+
+    def process_due_retries(self, *, limit: int = 100) -> list[UUID]:
+        due_delivery_ids = list(
+            self.session.scalars(
+                select(WebhookDelivery.id)
+                .where(
+                    WebhookDelivery.status == WebhookDeliveryStatus.FAILED,
+                    WebhookDelivery.next_retry_at.is_not(None),
+                    WebhookDelivery.next_retry_at <= datetime.now(UTC),
+                )
+                .order_by(WebhookDelivery.next_retry_at.asc(), WebhookDelivery.created_at.asc())
+                .limit(limit)
+            )
+        )
+        for delivery_id in due_delivery_ids:
+            delivery = self.session.scalar(
+                select(WebhookDelivery).where(WebhookDelivery.id == delivery_id)
+            )
+            if delivery is None:
+                continue
+            self._reset_delivery_for_retry(delivery)
+            self.session.commit()
+            self.dispatch_deliveries([delivery.id])
+        return due_delivery_ids
 
     def _dispatch_single_delivery(
         self,
@@ -259,8 +282,16 @@ class WebhookService:
         delivery.http_status = http_status
         delivery.response_body_excerpt = response_body_excerpt
         delivery.next_retry_at = datetime.now(UTC) + timedelta(
-            seconds=30 * (2 ** max(delivery.attempts - 1, 0))
+            seconds=self.settings.webhook_retry_base_delay_seconds
+            * (2 ** max(delivery.attempts - 1, 0))
         )
+
+    @staticmethod
+    def _reset_delivery_for_retry(delivery: WebhookDelivery) -> None:
+        delivery.status = WebhookDeliveryStatus.PENDING
+        delivery.http_status = None
+        delivery.response_body_excerpt = None
+        delivery.next_retry_at = None
 
     def _ensure_manage_permission(self, actor: ActorContext) -> None:
         ensure_role_allowed(

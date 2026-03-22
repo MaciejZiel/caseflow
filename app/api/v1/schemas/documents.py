@@ -91,6 +91,7 @@ class ProcessingJobResponse(BaseModel):
     last_error: str | None
     payload_json: dict[str, object]
     scheduled_at: datetime
+    next_retry_at: datetime | None
     started_at: datetime | None
     finished_at: datetime | None
     created_at: datetime
