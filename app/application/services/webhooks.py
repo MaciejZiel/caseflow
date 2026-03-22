@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from urllib import error, request
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.schemas.webhooks import (
@@ -166,6 +166,11 @@ class WebhookService:
                 continue
             self._dispatch_single_delivery(delivery=delivery, endpoint=endpoint)
 
+    def dispatch_enqueued_deliveries(self, delivery_ids: list[UUID]) -> None:
+        if self.settings.webhook_delivery_mode != "sync":
+            return
+        self.dispatch_deliveries(delivery_ids)
+
     def retry_delivery(
         self,
         *,
@@ -193,14 +198,19 @@ class WebhookService:
         self.session.refresh(delivery)
         return delivery
 
-    def process_due_retries(self, *, limit: int = 100) -> list[UUID]:
+    def process_due_deliveries(self, *, limit: int = 100) -> list[UUID]:
         due_delivery_ids = list(
             self.session.scalars(
                 select(WebhookDelivery.id)
                 .where(
-                    WebhookDelivery.status == WebhookDeliveryStatus.FAILED,
-                    WebhookDelivery.next_retry_at.is_not(None),
-                    WebhookDelivery.next_retry_at <= datetime.now(UTC),
+                    or_(
+                        WebhookDelivery.status == WebhookDeliveryStatus.PENDING,
+                        and_(
+                            WebhookDelivery.status == WebhookDeliveryStatus.FAILED,
+                            WebhookDelivery.next_retry_at.is_not(None),
+                            WebhookDelivery.next_retry_at <= datetime.now(UTC),
+                        ),
+                    )
                 )
                 .order_by(WebhookDelivery.next_retry_at.asc(), WebhookDelivery.created_at.asc())
                 .limit(limit)

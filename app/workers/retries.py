@@ -26,7 +26,7 @@ def run_retry_cycle(*, limit_per_queue: int = 50) -> RetryCycleResult:
             DocumentService(session).process_due_jobs(limit=limit_per_queue)
         )
         processed_webhook_deliveries = len(
-            WebhookService(session).process_due_retries(limit=limit_per_queue)
+            WebhookService(session).process_due_deliveries(limit=limit_per_queue)
         )
         processed_emails = len(
             EmailOutboxService(session).process_due_emails(limit=limit_per_queue)

@@ -64,7 +64,7 @@ class CaseService:
             ) from exc
 
         self.session.refresh(case)
-        WebhookService(self.session).dispatch_deliveries(delivery_ids)
+        WebhookService(self.session).dispatch_enqueued_deliveries(delivery_ids)
         return case
 
     def list_cases(
@@ -178,7 +178,7 @@ class CaseService:
             ) from exc
 
         self.session.refresh(case)
-        WebhookService(self.session).dispatch_deliveries(delivery_ids)
+        WebhookService(self.session).dispatch_enqueued_deliveries(delivery_ids)
         return case
 
     def archive_case(self, *, actor: ActorContext, case_id: UUID) -> Case:
@@ -222,7 +222,7 @@ class CaseService:
         )
         self.session.commit()
         self.session.refresh(case)
-        WebhookService(self.session).dispatch_deliveries(delivery_ids)
+        WebhookService(self.session).dispatch_enqueued_deliveries(delivery_ids)
         return case
 
     def create_comment(
@@ -260,7 +260,7 @@ class CaseService:
         )
         self.session.commit()
         self.session.refresh(comment)
-        WebhookService(self.session).dispatch_deliveries(delivery_ids)
+        WebhookService(self.session).dispatch_enqueued_deliveries(delivery_ids)
         return comment
 
     def list_comments(self, *, actor: ActorContext, case_id: UUID) -> list[CaseComment]:

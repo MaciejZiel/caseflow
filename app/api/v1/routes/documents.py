@@ -21,6 +21,7 @@ from app.api.v1.schemas.documents import (
 )
 from app.application.services.audit import AuditService
 from app.application.services.documents import DocumentService
+from app.core.config import get_settings
 from app.infrastructure.db.session import get_db_session
 
 case_router = APIRouter(prefix="/cases")
@@ -47,7 +48,8 @@ async def create_document(
         payload=payload,
     )
     response = DocumentResponse.model_validate(result.document, from_attributes=True)
-    service.process_document_job(job_id=result.job.id)
+    if get_settings().document_processing_mode == "inline":
+        service.process_document_job(job_id=result.job.id)
     return response
 
 
@@ -92,7 +94,8 @@ async def create_document_version(
         payload=payload,
     )
     response = DocumentResponse.model_validate(result.document, from_attributes=True)
-    service.process_document_job(job_id=result.job.id)
+    if get_settings().document_processing_mode == "inline":
+        service.process_document_job(job_id=result.job.id)
     return response
 
 

@@ -445,7 +445,7 @@ class DocumentService:
             )
         )
         self.session.commit()
-        WebhookService(self.session).dispatch_deliveries(delivery_ids)
+        WebhookService(self.session).dispatch_enqueued_deliveries(delivery_ids)
 
     def retry_job(
         self,
@@ -564,7 +564,7 @@ class DocumentService:
             raise
 
         self.session.refresh(document)
-        WebhookService(self.session).dispatch_deliveries(delivery_ids)
+        WebhookService(self.session).dispatch_enqueued_deliveries(delivery_ids)
 
     def _prepare_upload(
         self,
@@ -675,7 +675,7 @@ class DocumentService:
 
         self.session.commit()
         self.session.refresh(document)
-        WebhookService(self.session).dispatch_deliveries(delivery_ids)
+        WebhookService(self.session).dispatch_enqueued_deliveries(delivery_ids)
         return document
 
     def _calculate_case_status_after_review(
@@ -753,7 +753,7 @@ class DocumentService:
             )
         )
         self.session.commit()
-        WebhookService(self.session).dispatch_deliveries(delivery_ids)
+        WebhookService(self.session).dispatch_enqueued_deliveries(delivery_ids)
 
     def _reset_job_for_retry(
         self,

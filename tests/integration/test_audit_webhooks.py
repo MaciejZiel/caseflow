@@ -10,6 +10,8 @@ import httpx
 import pytest
 
 from app.application.services import webhooks as webhook_module
+from app.core.config import get_settings
+from app.workers.retries import run_retry_cycle
 from tests.integration.helpers import create_case, encode_document_content, register_owner
 
 
@@ -243,3 +245,68 @@ async def test_failed_webhook_delivery_can_be_retried_manually(
     assert retried.json()["status"] == "delivered"
     assert retried.json()["attempts"] == 2
     assert retried.json()["http_status"] == 200
+
+
+@pytest.mark.asyncio
+async def test_webhook_worker_mode_defers_initial_delivery_until_worker_cycle(
+    async_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_requests: list[dict[str, Any]] = []
+
+    def fake_urlopen(req: Any, timeout: int = 0) -> _FakeWebhookResponse:
+        captured_requests.append(
+            {
+                "data": req.data,
+                "headers": dict(req.header_items()),
+                "url": req.full_url,
+                "timeout": timeout,
+            }
+        )
+        return _FakeWebhookResponse(status=200, body=b'{"ok":true}')
+
+    monkeypatch.setattr(webhook_module.request, "urlopen", fake_urlopen)
+    monkeypatch.setenv("WEBHOOK_DELIVERY_MODE", "worker")
+    get_settings.cache_clear()
+
+    owner = await register_owner(async_client)
+    created_endpoint = await async_client.post(
+        "/api/v1/webhooks/endpoints",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+        json={
+            "target_url": "https://worker-mode.example.test/webhook",
+            "signing_secret": "worker-mode-secret-1234567890",
+        },
+    )
+
+    assert created_endpoint.status_code == 201
+
+    await create_case(
+        async_client,
+        access_token=owner["access_token"],
+        title="Deferred webhook case",
+    )
+
+    deliveries_before_worker = await async_client.get(
+        "/api/v1/webhooks/deliveries",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+        params={"event_type": "case.created"},
+    )
+
+    assert deliveries_before_worker.status_code == 200
+    assert deliveries_before_worker.json()[0]["status"] == "pending"
+    assert captured_requests == []
+
+    result = run_retry_cycle(limit_per_queue=10)
+    assert result.processed_webhook_deliveries == 1
+
+    deliveries_after_worker = await async_client.get(
+        "/api/v1/webhooks/deliveries",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+        params={"event_type": "case.created"},
+    )
+
+    assert deliveries_after_worker.status_code == 200
+    assert deliveries_after_worker.json()[0]["status"] == "delivered"
+    assert len(captured_requests) == 1
+    get_settings.cache_clear()

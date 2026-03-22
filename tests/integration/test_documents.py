@@ -3,6 +3,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
+from app.core.config import get_settings
+from app.workers.retries import run_retry_cycle
 from tests.integration.helpers import (
     accept_invitation,
     create_case,
@@ -381,3 +383,57 @@ async def test_failed_processing_job_can_be_retried_manually(
     assert retried.json()["status"] == "failed"
     assert retried.json()["attempts"] == 2
     assert retried.json()["last_error"] is not None
+
+
+@pytest.mark.asyncio
+async def test_document_processing_worker_mode_defers_execution_until_worker_cycle(
+    async_client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DOCUMENT_PROCESSING_MODE", "worker")
+    get_settings.cache_clear()
+
+    owner = await register_owner(async_client)
+    case = await create_case(async_client, access_token=owner["access_token"])
+
+    created = await async_client.post(
+        f"/api/v1/cases/{case['id']}/documents",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+        json={
+            "title": "Deferred processing doc",
+            "document_type": "statement",
+            "original_filename": "deferred.txt",
+            "mime_type": "text/plain",
+            "content_base64": encode_document_content(b"background worker content"),
+        },
+    )
+
+    assert created.status_code == 201
+    document_id = created.json()["id"]
+    assert created.json()["status"] == "queued"
+
+    jobs_before_worker = await async_client.get(
+        f"/api/v1/documents/{document_id}/jobs",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+    )
+    assert jobs_before_worker.status_code == 200
+    assert jobs_before_worker.json()[0]["status"] == "queued"
+
+    fetched_before_worker = await async_client.get(
+        f"/api/v1/documents/{document_id}",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+    )
+    assert fetched_before_worker.status_code == 200
+    assert fetched_before_worker.json()["status"] == "queued"
+
+    result = run_retry_cycle(limit_per_queue=10)
+    assert result.processed_document_jobs == 1
+
+    ready_document = await wait_for_document_status(
+        async_client,
+        access_token=owner["access_token"],
+        document_id=document_id,
+        expected_statuses=("ready",),
+    )
+    assert ready_document["status"] == "ready"
+    get_settings.cache_clear()
