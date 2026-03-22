@@ -32,7 +32,7 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - security headers, trusted host filtering, opt-in proxy header trust and CORS allowlists
 - organization operations summary, failure inspection and scoped retry-due maintenance endpoints
 - retention preview/run endpoints for old delivered webhooks and sent outbound emails
-- platform admin overview, failure feed, retry-due tooling and tenant lifecycle controls
+- platform admin overview, anomaly detection, tenant activity feed and lifecycle controls
 - demo data seeding script for a ready-to-show local environment
 - Alembic migrations and integration tests
 
@@ -54,7 +54,9 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - `POST /api/v1/api-keys/{api_key_id}/revoke`
 - `GET /api/v1/admin/organizations`
 - `GET /api/v1/admin/organizations/{organization_id}`
+- `GET /api/v1/admin/organizations/{organization_id}/activity`
 - `GET /api/v1/admin/overview`
+- `GET /api/v1/admin/anomalies`
 - `GET /api/v1/admin/failures`
 - `POST /api/v1/admin/organizations/{organization_id}/suspend`
 - `POST /api/v1/admin/organizations/{organization_id}/reactivate`
@@ -108,7 +110,9 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 11. Enable `TRUST_PROXY_HEADERS` only when the app runs behind a trusted reverse proxy.
 12. Promote a platform admin with `make promote-superuser EMAIL=owner@example.com` if you need
     access to `/api/v1/admin/*`.
-13. Run checks with `make lint` and `make test`.
+13. Tune `ADMIN_FAILURE_ANOMALY_THRESHOLD` and `ADMIN_QUEUE_STALE_HOURS` if you want stricter or
+    looser platform anomaly detection.
+14. Run checks with `make lint` and `make test`.
 
 ## Demo Dataset
 
@@ -173,7 +177,7 @@ Integration tests cover:
 - API key management and tenant-scoped integration access
 - case reporting, search and CSV export
 - operational summary, failures and maintenance retry endpoints
-- platform admin overview, failure feed and lifecycle controls
+- platform admin overview, anomaly detection, activity feed and lifecycle controls
 - retention preview and cleanup controls
 - email outbox and local sink delivery
 - demo data seeding
@@ -202,6 +206,9 @@ Integration tests cover:
   their existing auth sessions reusable after reactivation.
 - Platform-wide retry uses the same persisted queues as organization-scoped maintenance and the
   background worker, so operational behavior does not fork between code paths.
+- Platform anomaly detection is query-driven over real tenant state, so it can flag ownerless
+  organizations, stale worker backlogs and inconsistent inactive tenants without a separate rules
+  engine.
 - Superuser access is managed explicitly through a dedicated service and script instead of being
   hardcoded into registration or environment-only bootstrap logic.
 - Retention cleanup is explicit and previewable, so old operational records can be pruned without
