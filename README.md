@@ -32,7 +32,7 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - security headers, trusted host filtering, opt-in proxy header trust and CORS allowlists
 - organization operations summary, failure inspection and scoped retry-due maintenance endpoints
 - retention preview/run endpoints for old delivered webhooks and sent outbound emails
-- platform admin overview, anomaly detection, tenant activity feed and bulk lifecycle controls
+- platform admin overview, anomaly detection, risk reporting, tenant activity feed and bulk lifecycle controls
 - demo data seeding script for a ready-to-show local environment
 - Alembic migrations and integration tests
 
@@ -58,6 +58,8 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - `POST /api/v1/admin/organizations/bulk-status`
 - `GET /api/v1/admin/overview`
 - `GET /api/v1/admin/anomalies`
+- `GET /api/v1/admin/risk-report`
+- `GET /api/v1/admin/exports/organizations.csv`
 - `GET /api/v1/admin/failures`
 - `POST /api/v1/admin/organizations/{organization_id}/suspend`
 - `POST /api/v1/admin/organizations/{organization_id}/reactivate`
@@ -178,7 +180,7 @@ Integration tests cover:
 - API key management and tenant-scoped integration access
 - case reporting, search and CSV export
 - operational summary, failures and maintenance retry endpoints
-- platform admin overview, anomaly detection, activity feed and bulk lifecycle controls
+- platform admin overview, anomaly detection, risk reporting, activity feed and bulk lifecycle controls
 - retention preview and cleanup controls
 - email outbox and local sink delivery
 - demo data seeding
@@ -210,6 +212,8 @@ Integration tests cover:
 - Platform anomaly detection is query-driven over real tenant state, so it can flag ownerless
   organizations, stale worker backlogs and inconsistent inactive tenants without a separate rules
   engine.
+- Platform risk reporting reuses anomaly scoring plus tenant health counters, so operators can sort
+  tenants by urgency and export the same snapshot as CSV without duplicating logic elsewhere.
 - Superuser access is managed explicitly through a dedicated service and script instead of being
   hardcoded into registration or environment-only bootstrap logic.
 - Retention cleanup is explicit and previewable, so old operational records can be pruned without
