@@ -33,7 +33,7 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - organization operations summary, failure inspection and scoped retry-due maintenance endpoints
 - retention preview/run endpoints for old delivered webhooks and sent outbound emails
 - platform admin overview, anomaly detection, risk reporting, tenant activity feed and bulk lifecycle controls
-- platform admin review queue with assignees, comments, due dates, tenant risk snapshots, auto-open flows and overdue escalation tooling
+- platform admin review queue with assignees, comments, due dates, tenant risk snapshots, auto-open flows, overdue escalation tooling and operator notifications
 - demo data seeding script for a ready-to-show local environment
 - Alembic migrations and integration tests
 
@@ -66,6 +66,12 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - `POST /api/v1/admin/reviews/auto-open`
 - `GET /api/v1/admin/reviews/escalation-preview`
 - `POST /api/v1/admin/reviews/escalate-overdue`
+- `GET /api/v1/admin/notifications`
+- `GET /api/v1/admin/notifications/summary`
+- `GET /api/v1/admin/notifications/preferences`
+- `PATCH /api/v1/admin/notifications/preferences`
+- `POST /api/v1/admin/notifications/{notification_id}/read`
+- `POST /api/v1/admin/notifications/read-all`
 - `GET /api/v1/admin/reviews`
 - `POST /api/v1/admin/organizations/{organization_id}/reviews`
 - `GET /api/v1/admin/reviews/{review_id}`
@@ -191,7 +197,7 @@ Integration tests cover:
 - API key management and tenant-scoped integration access
 - case reporting, search and CSV export
 - operational summary, failures and maintenance retry endpoints
-- platform admin overview, anomaly detection, risk reporting, review queue, review auto-open flows, overdue escalation tooling, activity feed and bulk lifecycle controls
+- platform admin overview, anomaly detection, risk reporting, review queue, review auto-open flows, overdue escalation tooling, operator notifications, activity feed and bulk lifecycle controls
 - retention preview and cleanup controls
 - email outbox and local sink delivery
 - demo data seeding
@@ -232,6 +238,9 @@ Integration tests cover:
 - Overdue escalation preview and execution reuse the same review state model, so SLA-driven urgency
   changes, reassignment and escalation comments stay on the normal review timeline instead of a
   separate ops-only path.
+- Platform admin notifications persist separately from tenant audit logs and can fan out through the
+  existing email outbox, so operators get both an in-app feed and optional email alerts without
+  inventing a second delivery pipeline.
 - Superuser access is managed explicitly through a dedicated service and script instead of being
   hardcoded into registration or environment-only bootstrap logic.
 - Retention cleanup is explicit and previewable, so old operational records can be pruned without
@@ -246,4 +255,4 @@ Integration tests cover:
 ## Next High-Value Steps
 
 - internal admin UI for platform operators on top of the review queue APIs
-- operator notifications or digests for newly auto-opened and escalated reviews
+- digest batching or scheduled summaries for noisy admin notification streams
