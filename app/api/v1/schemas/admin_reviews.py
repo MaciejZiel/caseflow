@@ -160,6 +160,25 @@ class AdminReviewSummaryResponse(BaseModel):
     unassigned_active_review_count: int
 
 
+class AdminReviewWorkloadResponse(BaseModel):
+    assignee: AdminReviewUserResponse | None
+    active_review_count: int
+    organization_count: int
+    urgent_review_count: int
+    overdue_review_count: int
+    due_today_count: int
+    due_soon_count: int
+    top_review_id: UUID | None
+    oldest_due_at: datetime | None
+    most_recent_update_at: datetime
+
+
+class AdminReviewAttentionResponse(AdminReviewResponse):
+    attention_reasons: list[str]
+    days_overdue: int | None
+    hours_until_due: int | None
+
+
 class AdminReviewAutoOpenPreviewItemResponse(BaseModel):
     organization: AdminReviewOrganizationResponse
     risk_score: int

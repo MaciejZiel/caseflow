@@ -114,6 +114,28 @@ class AdminReviewSummary:
 
 
 @dataclass(slots=True)
+class AdminReviewWorkloadItem:
+    assignee: AdminReviewUserRef | None
+    active_review_count: int
+    organization_count: int
+    urgent_review_count: int
+    overdue_review_count: int
+    due_today_count: int
+    due_soon_count: int
+    top_review_id: UUID | None
+    oldest_due_at: datetime | None
+    most_recent_update_at: datetime
+
+
+@dataclass(slots=True)
+class AdminReviewAttentionItem:
+    review: AdminReviewListItem
+    attention_reasons: list[str]
+    days_overdue: int | None
+    hours_until_due: int | None
+
+
+@dataclass(slots=True)
 class AdminReviewAutoOpenCandidate:
     organization: AdminReviewOrganizationRef
     risk_score: int
@@ -277,6 +299,117 @@ class AdminReviewService:
             )
             for item in risk_items
         ]
+
+    def list_review_workload(
+        self,
+        *,
+        actor: ActorContext,
+        limit: int,
+    ) -> list[AdminReviewWorkloadItem]:
+        self._ensure_superuser(actor)
+        now = datetime.now(UTC)
+        reviews = self._list_active_reviews()
+        if not reviews:
+            return []
+
+        users = self._load_users(
+            {
+                review.assigned_to_user_id
+                for review in reviews
+                if review.assigned_to_user_id is not None
+            }
+        )
+        grouped_reviews: dict[UUID | None, list[AdminOrganizationReview]] = {}
+        for review in reviews:
+            grouped_reviews.setdefault(review.assigned_to_user_id, []).append(review)
+
+        items: list[AdminReviewWorkloadItem] = []
+        for assignee_id, grouped in grouped_reviews.items():
+            ordered_group = sorted(
+                grouped,
+                key=lambda review: self._attention_sort_components(review=review, now=now),
+            )
+            due_dates = [
+                due_at
+                for review in grouped
+                if (due_at := self._review_due_at(review)) is not None
+            ]
+            items.append(
+                AdminReviewWorkloadItem(
+                    assignee=users.get(assignee_id) if assignee_id is not None else None,
+                    active_review_count=len(grouped),
+                    organization_count=len({review.organization_id for review in grouped}),
+                    urgent_review_count=sum(
+                        review.priority == AdminReviewPriority.URGENT for review in grouped
+                    ),
+                    overdue_review_count=sum(
+                        self._is_review_overdue(review=review, now=now) for review in grouped
+                    ),
+                    due_today_count=sum(
+                        self._is_review_due_today(review=review, now=now) for review in grouped
+                    ),
+                    due_soon_count=sum(
+                        self._is_review_due_soon(review=review, now=now) for review in grouped
+                    ),
+                    top_review_id=ordered_group[0].id if ordered_group else None,
+                    oldest_due_at=min(due_dates) if due_dates else None,
+                    most_recent_update_at=max(review.updated_at for review in grouped),
+                )
+            )
+
+        items.sort(
+            key=lambda item: (
+                -item.overdue_review_count,
+                -item.urgent_review_count,
+                -item.due_today_count,
+                -item.due_soon_count,
+                -item.active_review_count,
+                item.assignee.email if item.assignee is not None else "",
+            )
+        )
+        return items[:limit]
+
+    def list_attention_queue(
+        self,
+        *,
+        actor: ActorContext,
+        limit: int,
+    ) -> list[AdminReviewAttentionItem]:
+        self._ensure_superuser(actor)
+        now = datetime.now(UTC)
+        reviews = self._list_active_reviews()
+        if not reviews:
+            return []
+
+        review_items = {
+            item.id: item
+            for item in self._build_review_list_items(reviews)
+        }
+        items: list[AdminReviewAttentionItem] = []
+        for review in reviews:
+            attention_reasons = self._build_attention_reasons(review=review, now=now)
+            if not attention_reasons:
+                continue
+            due_at = self._review_due_at(review)
+            items.append(
+                AdminReviewAttentionItem(
+                    review=review_items[review.id],
+                    attention_reasons=attention_reasons,
+                    days_overdue=(
+                        self._days_overdue(review=review, now=now)
+                        if self._is_review_overdue(review=review, now=now)
+                        else None
+                    ),
+                    hours_until_due=(
+                        self._hours_until_due(review=review, now=now)
+                        if due_at is not None and due_at >= now
+                        else None
+                    ),
+                )
+            )
+
+        items.sort(key=self._attention_item_sort_key)
+        return items[:limit]
 
     def auto_open_reviews(
         self,
@@ -835,6 +968,18 @@ class AdminReviewService:
             active_review_ids.setdefault(organization_id, review_id)
         return active_review_ids
 
+    def _list_active_reviews(self) -> list[AdminOrganizationReview]:
+        return list(
+            self.session.scalars(
+                select(AdminOrganizationReview)
+                .where(AdminOrganizationReview.status.in_(tuple(ACTIVE_REVIEW_STATUSES)))
+                .order_by(
+                    AdminOrganizationReview.updated_at.desc(),
+                    AdminOrganizationReview.created_at.desc(),
+                )
+            )
+        )
+
     def _build_auto_open_candidate(
         self,
         *,
@@ -1033,6 +1178,134 @@ class AdminReviewService:
 
     def _count_rows(self, statement) -> int:
         return int(self.session.scalar(statement) or 0)
+
+    @staticmethod
+    def _review_due_at(review: AdminOrganizationReview) -> datetime | None:
+        if review.due_at is None:
+            return None
+        return _to_utc(review.due_at)
+
+    def _build_attention_reasons(
+        self,
+        *,
+        review: AdminOrganizationReview,
+        now: datetime,
+    ) -> list[str]:
+        reasons: list[str] = []
+        if self._is_review_overdue(review=review, now=now):
+            reasons.append("overdue")
+        if review.priority == AdminReviewPriority.URGENT:
+            reasons.append("urgent")
+        if self._is_review_due_today(review=review, now=now):
+            reasons.append("due_today")
+        elif self._is_review_due_soon(review=review, now=now):
+            reasons.append("due_soon")
+        if review.assigned_to_user_id is None:
+            reasons.append("unassigned")
+        return reasons
+
+    def _is_review_overdue(
+        self,
+        *,
+        review: AdminOrganizationReview,
+        now: datetime,
+    ) -> bool:
+        due_at = self._review_due_at(review)
+        return due_at is not None and due_at < now
+
+    def _is_review_due_today(
+        self,
+        *,
+        review: AdminOrganizationReview,
+        now: datetime,
+    ) -> bool:
+        due_at = self._review_due_at(review)
+        if due_at is None or due_at < now:
+            return False
+        start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_of_tomorrow = start_of_today + timedelta(days=1)
+        return start_of_today <= due_at < start_of_tomorrow
+
+    def _is_review_due_soon(
+        self,
+        *,
+        review: AdminOrganizationReview,
+        now: datetime,
+    ) -> bool:
+        due_at = self._review_due_at(review)
+        if due_at is None or due_at < now:
+            return False
+        start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        due_soon_cutoff = now + timedelta(days=3)
+        return due_at >= start_of_today + timedelta(days=1) and due_at < due_soon_cutoff
+
+    def _days_overdue(
+        self,
+        *,
+        review: AdminOrganizationReview,
+        now: datetime,
+    ) -> int:
+        due_at = self._review_due_at(review)
+        if due_at is None:
+            return 0
+        return max(1, int((now - due_at).total_seconds() // 86_400))
+
+    def _hours_until_due(
+        self,
+        *,
+        review: AdminOrganizationReview,
+        now: datetime,
+    ) -> int | None:
+        due_at = self._review_due_at(review)
+        if due_at is None or due_at < now:
+            return None
+        return max(0, int((due_at - now).total_seconds() // 3_600))
+
+    def _attention_sort_components(
+        self,
+        *,
+        review: AdminOrganizationReview,
+        now: datetime,
+    ) -> tuple[int, int, int, int, int, datetime, int, int]:
+        due_at = self._review_due_at(review) or datetime.max.replace(tzinfo=UTC)
+        return (
+            0 if self._is_review_overdue(review=review, now=now) else 1,
+            -self._days_overdue(review=review, now=now),
+            0 if review.priority == AdminReviewPriority.URGENT else 1,
+            0 if self._is_review_due_today(review=review, now=now) else 1,
+            0 if self._is_review_due_soon(review=review, now=now) else 1,
+            due_at,
+            self._priority_sort_value(review.priority),
+            -review.risk_score_snapshot,
+        )
+
+    def _attention_item_sort_key(
+        self,
+        item: AdminReviewAttentionItem,
+    ) -> tuple[int, int, int, int, int, datetime, int, int, float]:
+        reasons = set(item.attention_reasons)
+        due_at = item.review.due_at or datetime.max.replace(tzinfo=UTC)
+        return (
+            0 if "overdue" in reasons else 1,
+            -(item.days_overdue or 0),
+            0 if "urgent" in reasons else 1,
+            0 if "due_today" in reasons else 1,
+            0 if "due_soon" in reasons else 1,
+            due_at,
+            self._priority_sort_value(item.review.priority),
+            0 if "unassigned" in reasons else 1,
+            -item.review.updated_at.timestamp(),
+        )
+
+    @staticmethod
+    def _priority_sort_value(priority: AdminReviewPriority) -> int:
+        if priority == AdminReviewPriority.URGENT:
+            return 0
+        if priority == AdminReviewPriority.HIGH:
+            return 1
+        if priority == AdminReviewPriority.NORMAL:
+            return 2
+        return 3
 
 
 def _to_utc(value: datetime) -> datetime:

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.auth import SuperuserActor, get_current_superuser_actor
 from app.api.v1.schemas.admin_reviews import (
+    AdminReviewAttentionResponse,
     AdminReviewAutoOpenPreviewItemResponse,
     AdminReviewAutoOpenRequest,
     AdminReviewAutoOpenResponse,
@@ -27,8 +28,10 @@ from app.api.v1.schemas.admin_reviews import (
     AdminReviewSummaryResponse,
     AdminReviewUpdateRequest,
     AdminReviewUserResponse,
+    AdminReviewWorkloadResponse,
 )
 from app.application.services.admin_reviews import (
+    AdminReviewAttentionItem,
     AdminReviewAutoOpenCandidate,
     AdminReviewAutoOpenResult,
     AdminReviewAutoOpenResultItem,
@@ -41,6 +44,7 @@ from app.application.services.admin_reviews import (
     AdminReviewService,
     AdminReviewSummary,
     AdminReviewUserRef,
+    AdminReviewWorkloadItem,
 )
 from app.domain.admin_reviews.models import AdminReviewPriority, AdminReviewStatus
 from app.infrastructure.db.session import get_db_session
@@ -58,6 +62,32 @@ async def get_review_summary(
 ) -> AdminReviewSummaryResponse:
     summary = AdminReviewService(session).get_review_summary(actor=actor)
     return _to_review_summary_response(summary)
+
+
+@router.get("/reviews/workload", response_model=list[AdminReviewWorkloadResponse])
+async def list_review_workload(
+    actor: SuperuserActorDep,
+    session: SessionDep,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> list[AdminReviewWorkloadResponse]:
+    workload = AdminReviewService(session).list_review_workload(
+        actor=actor,
+        limit=limit,
+    )
+    return [_to_review_workload_response(item) for item in workload]
+
+
+@router.get("/reviews/attention-queue", response_model=list[AdminReviewAttentionResponse])
+async def list_attention_queue(
+    actor: SuperuserActorDep,
+    session: SessionDep,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> list[AdminReviewAttentionResponse]:
+    attention_items = AdminReviewService(session).list_attention_queue(
+        actor=actor,
+        limit=limit,
+    )
+    return [_to_review_attention_response(item) for item in attention_items]
 
 
 @router.get(
@@ -370,6 +400,57 @@ def _to_review_response(review: AdminReviewListItem) -> AdminReviewResponse:
         last_comment_at=review.last_comment_at,
         created_at=review.created_at,
         updated_at=review.updated_at,
+    )
+
+
+def _to_review_workload_response(
+    item: AdminReviewWorkloadItem,
+) -> AdminReviewWorkloadResponse:
+    return AdminReviewWorkloadResponse(
+        assignee=_to_review_user_response(item.assignee),
+        active_review_count=item.active_review_count,
+        organization_count=item.organization_count,
+        urgent_review_count=item.urgent_review_count,
+        overdue_review_count=item.overdue_review_count,
+        due_today_count=item.due_today_count,
+        due_soon_count=item.due_soon_count,
+        top_review_id=item.top_review_id,
+        oldest_due_at=item.oldest_due_at,
+        most_recent_update_at=item.most_recent_update_at,
+    )
+
+
+def _to_review_attention_response(
+    item: AdminReviewAttentionItem,
+) -> AdminReviewAttentionResponse:
+    review = item.review
+    return AdminReviewAttentionResponse(
+        id=review.id,
+        organization=AdminReviewOrganizationResponse(
+            id=review.organization.id,
+            name=review.organization.name,
+            slug=review.organization.slug,
+            status=review.organization.status,
+        ),
+        title=review.title,
+        summary=review.summary,
+        status=review.status,
+        priority=review.priority,
+        due_at=review.due_at,
+        resolved_at=review.resolved_at,
+        risk_score_snapshot=review.risk_score_snapshot,
+        risk_level_snapshot=review.risk_level_snapshot,
+        anomaly_count_snapshot=review.anomaly_count_snapshot,
+        top_anomaly_codes_snapshot=review.top_anomaly_codes_snapshot,
+        created_by=_to_review_user_response(review.created_by),
+        assigned_to=_to_review_user_response(review.assigned_to),
+        comment_count=review.comment_count,
+        last_comment_at=review.last_comment_at,
+        created_at=review.created_at,
+        updated_at=review.updated_at,
+        attention_reasons=item.attention_reasons,
+        days_overdue=item.days_overdue,
+        hours_until_due=item.hours_until_due,
     )
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib import error
 
@@ -209,6 +210,124 @@ async def test_platform_admin_review_queue_captures_risk_snapshots_and_comments(
             "admin_review.updated",
             "admin_review.comment_added",
         } <= event_types
+
+
+@pytest.mark.asyncio
+async def test_platform_admin_review_workload_and_attention_queue(
+    async_client: httpx.AsyncClient,
+) -> None:
+    admin = await register_owner(
+        async_client,
+        organization_name="Platform Admins",
+        organization_slug="platform-admins",
+        email="root@example.com",
+    )
+    promote_user_to_superuser(email=admin["email"])
+
+    second_admin = await register_owner(
+        async_client,
+        organization_name="Platform Ops",
+        organization_slug="platform-ops",
+        email="ops@example.com",
+    )
+    promote_user_to_superuser(email=second_admin["email"])
+
+    now = datetime.now(UTC)
+    start_of_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_of_tomorrow = start_of_today + timedelta(days=1)
+    due_today = min(now + timedelta(hours=1), start_of_tomorrow - timedelta(minutes=1))
+    due_soon = start_of_today + timedelta(days=2, hours=9)
+    overdue = now - timedelta(days=2, hours=3)
+
+    overdue_tenant = await register_owner(
+        async_client,
+        organization_name="Overdue Tenant",
+        organization_slug="overdue-tenant",
+        email="owner@overdue-tenant.example.com",
+    )
+    due_today_tenant = await register_owner(
+        async_client,
+        organization_name="Due Today Tenant",
+        organization_slug="due-today-tenant",
+        email="owner@due-today-tenant.example.com",
+    )
+    unassigned_tenant = await register_owner(
+        async_client,
+        organization_name="Unassigned Tenant",
+        organization_slug="unassigned-tenant",
+        email="owner@unassigned-tenant.example.com",
+    )
+
+    overdue_review = await async_client.post(
+        f"/api/v1/admin/organizations/{overdue_tenant['organization_id']}/reviews",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        json={
+            "title": "Overdue urgent review",
+            "priority": "urgent",
+            "assigned_to_user_id": second_admin["user_id"],
+            "due_at": overdue.isoformat(),
+        },
+    )
+    assert overdue_review.status_code == 201
+
+    due_today_review = await async_client.post(
+        f"/api/v1/admin/organizations/{due_today_tenant['organization_id']}/reviews",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        json={
+            "title": "Due today review",
+            "assigned_to_user_id": admin["user_id"],
+            "due_at": due_today.isoformat(),
+        },
+    )
+    assert due_today_review.status_code == 201
+
+    due_soon_review = await async_client.post(
+        f"/api/v1/admin/organizations/{unassigned_tenant['organization_id']}/reviews",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        json={
+            "title": "Unassigned due soon review",
+            "due_at": due_soon.isoformat(),
+        },
+    )
+    assert due_soon_review.status_code == 201
+
+    workload = await async_client.get(
+        "/api/v1/admin/reviews/workload",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        params={"limit": 10},
+    )
+    assert workload.status_code == 200
+    workload_body = workload.json()
+    assert [item["assignee"]["email"] if item["assignee"] else None for item in workload_body] == [
+        second_admin["email"],
+        admin["email"],
+        None,
+    ]
+    assert workload_body[0]["overdue_review_count"] == 1
+    assert workload_body[0]["urgent_review_count"] == 1
+    assert workload_body[0]["top_review_id"] == overdue_review.json()["id"]
+    assert workload_body[1]["due_today_count"] == 1
+    assert workload_body[1]["top_review_id"] == due_today_review.json()["id"]
+    assert workload_body[2]["due_soon_count"] == 1
+    assert workload_body[2]["assignee"] is None
+    assert workload_body[2]["top_review_id"] == due_soon_review.json()["id"]
+
+    attention_queue = await async_client.get(
+        "/api/v1/admin/reviews/attention-queue",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        params={"limit": 10},
+    )
+    assert attention_queue.status_code == 200
+    attention_body = attention_queue.json()
+    assert [item["id"] for item in attention_body] == [
+        overdue_review.json()["id"],
+        due_today_review.json()["id"],
+        due_soon_review.json()["id"],
+    ]
+    assert attention_body[0]["attention_reasons"][:2] == ["overdue", "urgent"]
+    assert attention_body[0]["days_overdue"] >= 2
+    assert attention_body[1]["attention_reasons"] == ["due_today"]
+    assert attention_body[2]["attention_reasons"] == ["due_soon", "unassigned"]
 
 
 @pytest.mark.asyncio
