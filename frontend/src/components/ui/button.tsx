@@ -17,6 +17,7 @@ export function Button({
     <button
       className={cn(
         "button",
+        "focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange-200",
         variant === "primary" && "button-primary",
         variant === "secondary" && "button-secondary",
         variant === "ghost" && "button-ghost",
