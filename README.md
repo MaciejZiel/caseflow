@@ -33,7 +33,7 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - organization operations summary, failure inspection and scoped retry-due maintenance endpoints
 - retention preview/run endpoints for old delivered webhooks and sent outbound emails
 - platform admin overview, anomaly detection, risk reporting, tenant activity feed and bulk lifecycle controls
-- platform admin review queue with assignees, comments, due dates and tenant risk snapshots
+- platform admin review queue with assignees, comments, due dates, tenant risk snapshots and auto-open flows
 - demo data seeding script for a ready-to-show local environment
 - Alembic migrations and integration tests
 
@@ -62,6 +62,8 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - `GET /api/v1/admin/risk-report`
 - `GET /api/v1/admin/exports/organizations.csv`
 - `GET /api/v1/admin/reviews/summary`
+- `GET /api/v1/admin/reviews/auto-open-preview`
+- `POST /api/v1/admin/reviews/auto-open`
 - `GET /api/v1/admin/reviews`
 - `POST /api/v1/admin/organizations/{organization_id}/reviews`
 - `GET /api/v1/admin/reviews/{review_id}`
@@ -187,7 +189,7 @@ Integration tests cover:
 - API key management and tenant-scoped integration access
 - case reporting, search and CSV export
 - operational summary, failures and maintenance retry endpoints
-- platform admin overview, anomaly detection, risk reporting, review queue, activity feed and bulk lifecycle controls
+- platform admin overview, anomaly detection, risk reporting, review queue, review auto-open flows, activity feed and bulk lifecycle controls
 - retention preview and cleanup controls
 - email outbox and local sink delivery
 - demo data seeding
@@ -223,6 +225,8 @@ Integration tests cover:
   tenants by urgency and export the same snapshot as CSV without duplicating logic elsewhere.
 - Platform review workflow stores assignee, due date, comments and captured risk context separately
   from live anomaly queries, so triage history survives even when tenant health changes later.
+- Review auto-open preview and execution reuse the same risk-report data and active-review guard, so
+  operators can bulk-open follow-ups without forking review creation rules from the manual path.
 - Superuser access is managed explicitly through a dedicated service and script instead of being
   hardcoded into registration or environment-only bootstrap logic.
 - Retention cleanup is explicit and previewable, so old operational records can be pruned without
@@ -237,4 +241,4 @@ Integration tests cover:
 ## Next High-Value Steps
 
 - internal admin UI for platform operators on top of the review queue APIs
-- automated review creation or escalation policies driven by risk thresholds
+- review SLA reminders and escalation policies for overdue platform reviews
