@@ -1,4 +1,7 @@
 import type {
+  AssistantConversation,
+  AssistantExchange,
+  AssistantMessage,
   ApiErrorPayload,
   AuditLogRecord,
   AuthResponse,
@@ -164,4 +167,57 @@ export async function listCaseAuditLog(token: string, caseId: string) {
   return request<AuditLogRecord[]>(`/cases/${caseId}/audit-log`, {
     token,
   });
+}
+
+export async function listAssistantConversations(token: string, caseId: string) {
+  return request<AssistantConversation[]>(`/cases/${caseId}/assistant/conversations`, {
+    token,
+  });
+}
+
+export async function createAssistantConversation(
+  token: string,
+  caseId: string,
+  payload: {
+    title?: string;
+    prompt_mode: string;
+  },
+) {
+  return request<AssistantConversation>(`/cases/${caseId}/assistant/conversations`, {
+    method: "POST",
+    token,
+    body: payload,
+  });
+}
+
+export async function listAssistantMessages(
+  token: string,
+  caseId: string,
+  conversationId: string,
+) {
+  return request<AssistantMessage[]>(
+    `/cases/${caseId}/assistant/conversations/${conversationId}/messages`,
+    {
+      token,
+    },
+  );
+}
+
+export async function askAssistant(
+  token: string,
+  caseId: string,
+  conversationId: string,
+  payload: {
+    question: string;
+    prompt_mode?: string;
+  },
+) {
+  return request<AssistantExchange>(
+    `/cases/${caseId}/assistant/conversations/${conversationId}/messages`,
+    {
+      method: "POST",
+      token,
+      body: payload,
+    },
+  );
 }

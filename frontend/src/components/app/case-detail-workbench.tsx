@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { CaseAssistantPanel } from "@/components/app/case-assistant-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/auth-context";
@@ -207,26 +208,7 @@ export function CaseDetailWorkbench({ caseId }: CaseDetailWorkbenchProps) {
         </div>
 
         <div className="surface-card">
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
-            Assistant lane
-          </p>
-          <h2 className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-slate-950">
-            Prepared for grounded case assistance
-          </h2>
-          <p className="mt-3 text-sm leading-7 text-slate-600">
-            This page is now wired to real case, document and audit data. The next backend step
-            will add a first-class assistant with history, retrieval and citations using this same
-            case context.
-          </p>
-          <div className="mt-5 rounded-[1.7rem] bg-slate-950 p-5 text-slate-50">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-              Planned assistant prompt
-            </p>
-            <p className="mt-3 text-sm leading-7 text-slate-300">
-              Summarize what is missing in this case, cite the latest document evidence, and
-              suggest the next operator action without inventing facts.
-            </p>
-          </div>
+          <CaseAssistantPanel caseId={caseId} />
         </div>
       </section>
 

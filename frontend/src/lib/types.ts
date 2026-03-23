@@ -99,6 +99,46 @@ export type AuditLogRecord = {
   created_at: string;
 };
 
+export type AssistantConversation = {
+  id: string;
+  case_id: string;
+  title: string;
+  prompt_mode: string;
+  created_by_user_id: string;
+  last_message_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AssistantCitation = {
+  document_id: string;
+  document_title: string;
+  document_type: string;
+  document_status: string;
+  document_version_id: string | null;
+  original_filename: string | null;
+  excerpt: string;
+  score: number;
+};
+
+export type AssistantMessage = {
+  id: string;
+  conversation_id: string;
+  actor_user_id: string | null;
+  role: "user" | "assistant";
+  prompt_mode: string;
+  content: string;
+  citations_json: AssistantCitation[];
+  metadata_json: Record<string, unknown>;
+  created_at: string;
+};
+
+export type AssistantExchange = {
+  conversation: AssistantConversation;
+  user_message: AssistantMessage;
+  assistant_message: AssistantMessage;
+};
+
 export type ApiErrorPayload = {
   error?: {
     code?: string;
