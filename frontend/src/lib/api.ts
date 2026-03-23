@@ -1,9 +1,11 @@
 import type {
   ApiErrorPayload,
+  AuditLogRecord,
   AuthResponse,
   CaseComment,
   CaseRecord,
   CaseSummaryReport,
+  DocumentRecord,
   SessionPayload,
 } from "@/lib/types";
 
@@ -122,6 +124,44 @@ export async function getCase(token: string, caseId: string) {
 
 export async function listCaseComments(token: string, caseId: string) {
   return request<CaseComment[]>(`/cases/${caseId}/comments`, {
+    token,
+  });
+}
+
+export async function createCaseComment(token: string, caseId: string, body: string) {
+  return request<CaseComment>(`/cases/${caseId}/comments`, {
+    method: "POST",
+    token,
+    body: { body },
+  });
+}
+
+export async function listCaseDocuments(token: string, caseId: string) {
+  return request<DocumentRecord[]>(`/cases/${caseId}/documents`, {
+    token,
+  });
+}
+
+export async function uploadCaseDocument(
+  token: string,
+  caseId: string,
+  payload: {
+    title: string;
+    document_type: string;
+    original_filename: string;
+    mime_type: string;
+    content_base64: string;
+  },
+) {
+  return request<DocumentRecord>(`/cases/${caseId}/documents`, {
+    method: "POST",
+    token,
+    body: payload,
+  });
+}
+
+export async function listCaseAuditLog(token: string, caseId: string) {
+  return request<AuditLogRecord[]>(`/cases/${caseId}/audit-log`, {
     token,
   });
 }

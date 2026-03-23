@@ -70,6 +70,35 @@ export type CaseComment = {
   updated_at: string;
 };
 
+export type DocumentRecord = {
+  id: string;
+  case_id: string;
+  current_version_id: string | null;
+  document_type: string;
+  title: string;
+  status: string;
+  uploaded_by: string;
+  checksum: string | null;
+  mime_type: string | null;
+  size_bytes: number | null;
+  storage_key: string | null;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AuditLogRecord = {
+  id: string;
+  actor_user_id: string | null;
+  event_type: string;
+  entity_type: string;
+  entity_id: string;
+  old_values_json: Record<string, unknown> | null;
+  new_values_json: Record<string, unknown> | null;
+  metadata_json: Record<string, unknown> | null;
+  created_at: string;
+};
+
 export type ApiErrorPayload = {
   error?: {
     code?: string;
