@@ -18,10 +18,17 @@ from app.infrastructure.observability.metrics import (
 
 def register_http_middleware(app: FastAPI) -> None:
     settings = app.state.settings
-    if settings.cors_allowed_origins:
+    cors_allowed_origins = list(settings.cors_allowed_origins)
+    if not cors_allowed_origins and settings.app_env == "local":
+        cors_allowed_origins = [
+            "http://127.0.0.1:3000",
+            "http://localhost:3000",
+        ]
+
+    if cors_allowed_origins:
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=settings.cors_allowed_origins,
+            allow_origins=cors_allowed_origins,
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
