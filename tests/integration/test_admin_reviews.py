@@ -35,6 +35,59 @@ class _FakeWebhookResponse:
         return self._body[:limit]
 
 
+async def _create_risky_tenant(
+    async_client: httpx.AsyncClient,
+    *,
+    organization_name: str,
+    organization_slug: str,
+    email: str,
+) -> dict[str, str]:
+    tenant = await register_owner(
+        async_client,
+        organization_name=organization_name,
+        organization_slug=organization_slug,
+        email=email,
+    )
+
+    created_endpoint = await async_client.post(
+        "/api/v1/webhooks/endpoints",
+        headers={"Authorization": f"Bearer {tenant['access_token']}"},
+        json={
+            "target_url": f"https://{organization_slug}.example.test/webhook",
+            "signing_secret": f"{organization_slug}-webhook-secret-1234567890",
+            "subscribed_event_types": ["case.created"],
+        },
+    )
+    assert created_endpoint.status_code == 201
+
+    case = await create_case(
+        async_client,
+        access_token=tenant["access_token"],
+        title=f"{organization_name} risk case",
+    )
+    created_document = await async_client.post(
+        f"/api/v1/cases/{case['id']}/documents",
+        headers={"Authorization": f"Bearer {tenant['access_token']}"},
+        json={
+            "title": "Broken intake package",
+            "document_type": "attachment",
+            "original_filename": "broken.txt",
+            "mime_type": "text/plain",
+            "content_base64": encode_document_content(b"FAIL_PROCESSING broken payload"),
+        },
+    )
+    assert created_document.status_code == 201
+
+    created_invitation = await create_invitation(
+        async_client,
+        access_token=tenant["access_token"],
+        email=f"member@{organization_slug}.example.com",
+        role="member",
+    )
+    assert created_invitation["invitation"]["id"] is not None
+    return tenant
+
+
 @pytest.mark.asyncio
 async def test_platform_admin_review_queue_captures_risk_snapshots_and_comments(
     tmp_path,
@@ -62,49 +115,12 @@ async def test_platform_admin_review_queue_captures_risk_snapshots_and_comments(
         )
         promote_user_to_superuser(email=admin["email"])
 
-        tenant = await register_owner(
+        tenant = await _create_risky_tenant(
             async_client,
             organization_name="Review Target",
             organization_slug="review-target",
             email="owner@review-target.example.com",
         )
-
-        created_endpoint = await async_client.post(
-            "/api/v1/webhooks/endpoints",
-            headers={"Authorization": f"Bearer {tenant['access_token']}"},
-            json={
-                "target_url": "https://review-target.example.test/webhook",
-                "signing_secret": "review-target-webhook-secret-1234567890",
-                "subscribed_event_types": ["case.created"],
-            },
-        )
-        assert created_endpoint.status_code == 201
-
-        case = await create_case(
-            async_client,
-            access_token=tenant["access_token"],
-            title="Escalated tenant review",
-        )
-        created_document = await async_client.post(
-            f"/api/v1/cases/{case['id']}/documents",
-            headers={"Authorization": f"Bearer {tenant['access_token']}"},
-            json={
-                "title": "Broken intake package",
-                "document_type": "attachment",
-                "original_filename": "broken.txt",
-                "mime_type": "text/plain",
-                "content_base64": encode_document_content(b"FAIL_PROCESSING broken payload"),
-            },
-        )
-        assert created_document.status_code == 201
-
-        created_invitation = await create_invitation(
-            async_client,
-            access_token=tenant["access_token"],
-            email="member@review-target.example.com",
-            role="member",
-        )
-        assert created_invitation["invitation"]["id"] is not None
 
         created_review = await async_client.post(
             f"/api/v1/admin/organizations/{tenant['organization_id']}/reviews",
@@ -193,6 +209,105 @@ async def test_platform_admin_review_queue_captures_risk_snapshots_and_comments(
             "admin_review.updated",
             "admin_review.comment_added",
         } <= event_types
+
+
+@pytest.mark.asyncio
+async def test_platform_admin_can_preview_and_auto_open_reviews_from_risk_report(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def failing_urlopen(req: Any, timeout: int = 0) -> _FakeWebhookResponse:
+        raise error.URLError("connection refused")
+
+    def failing_email_deliver(self, email) -> str:
+        raise RuntimeError("smtp offline")
+
+    async with configured_async_client(
+        tmp_path,
+        monkeypatch,
+        env_overrides={"ADMIN_FAILURE_ANOMALY_THRESHOLD": "1"},
+    ) as async_client:
+        monkeypatch.setattr(webhook_module.request, "urlopen", failing_urlopen)
+        monkeypatch.setattr(LocalEmailSink, "deliver", failing_email_deliver)
+
+        admin = await register_owner(
+            async_client,
+            organization_name="Platform Admins",
+            organization_slug="platform-admins",
+            email="root@example.com",
+        )
+        promote_user_to_superuser(email=admin["email"])
+
+        auto_open_target = await _create_risky_tenant(
+            async_client,
+            organization_name="Auto Open Target",
+            organization_slug="auto-open-target",
+            email="owner@auto-open-target.example.com",
+        )
+        existing_review_target = await _create_risky_tenant(
+            async_client,
+            organization_name="Existing Review Target",
+            organization_slug="existing-review-target",
+            email="owner@existing-review-target.example.com",
+        )
+
+        created_manual_review = await async_client.post(
+            f"/api/v1/admin/organizations/{existing_review_target['organization_id']}/reviews",
+            headers={"Authorization": f"Bearer {admin['access_token']}"},
+            json={"title": "Existing manual review"},
+        )
+        assert created_manual_review.status_code == 201
+
+        preview = await async_client.get(
+            "/api/v1/admin/reviews/auto-open-preview",
+            headers={"Authorization": f"Bearer {admin['access_token']}"},
+            params={"min_risk_score": 50, "limit": 10},
+        )
+        assert preview.status_code == 200
+        preview_rows = {
+            item["organization"]["slug"]: item
+            for item in preview.json()
+        }
+        assert preview_rows["auto-open-target"]["has_active_review"] is False
+        assert preview_rows["existing-review-target"]["has_active_review"] is True
+        assert preview_rows["auto-open-target"]["suggested_priority"] == "high"
+
+        auto_open = await async_client.post(
+            "/api/v1/admin/reviews/auto-open",
+            headers={"Authorization": f"Bearer {admin['access_token']}"},
+            json={
+                "min_risk_score": 50,
+                "limit": 10,
+                "assigned_to_user_id": admin["user_id"],
+                "due_in_days": 2,
+            },
+        )
+        assert auto_open.status_code == 200
+        auto_open_body = auto_open.json()
+        assert auto_open_body["created_count"] == 1
+        assert auto_open_body["skipped_count"] == 1
+
+        result_by_slug = {
+            item["organization"]["slug"]: item
+            for item in auto_open_body["results"]
+        }
+        assert result_by_slug["auto-open-target"]["outcome"] == "created"
+        assert result_by_slug["existing-review-target"]["outcome"] == "skipped"
+        assert result_by_slug["existing-review-target"]["reason"] == "active_review_exists"
+
+        created_review_detail = await async_client.get(
+            f"/api/v1/admin/reviews/{result_by_slug['auto-open-target']['review_id']}",
+            headers={"Authorization": f"Bearer {admin['access_token']}"},
+        )
+        assert created_review_detail.status_code == 200
+        created_review_body = created_review_detail.json()
+        assert created_review_body["organization"]["id"] == auto_open_target["organization_id"]
+        assert created_review_body["assigned_to"]["email"] == admin["email"]
+        assert created_review_body["priority"] == "high"
+        assert created_review_body["due_at"] is not None
+        assert created_review_body["title"] == (
+            "Platform review: Auto Open Target (high risk)"
+        )
 
 
 @pytest.mark.asyncio

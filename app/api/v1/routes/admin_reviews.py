@@ -10,6 +10,10 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.auth import SuperuserActor, get_current_superuser_actor
 from app.api.v1.schemas.admin_reviews import (
+    AdminReviewAutoOpenPreviewItemResponse,
+    AdminReviewAutoOpenRequest,
+    AdminReviewAutoOpenResponse,
+    AdminReviewAutoOpenResultItemResponse,
     AdminReviewCommentCreateRequest,
     AdminReviewCommentResponse,
     AdminReviewCreateRequest,
@@ -21,6 +25,9 @@ from app.api.v1.schemas.admin_reviews import (
     AdminReviewUserResponse,
 )
 from app.application.services.admin_reviews import (
+    AdminReviewAutoOpenCandidate,
+    AdminReviewAutoOpenResult,
+    AdminReviewAutoOpenResultItem,
     AdminReviewCommentItem,
     AdminReviewDetail,
     AdminReviewListItem,
@@ -44,6 +51,34 @@ async def get_review_summary(
 ) -> AdminReviewSummaryResponse:
     summary = AdminReviewService(session).get_review_summary(actor=actor)
     return _to_review_summary_response(summary)
+
+
+@router.get(
+    "/reviews/auto-open-preview",
+    response_model=list[AdminReviewAutoOpenPreviewItemResponse],
+)
+async def preview_auto_open_reviews(
+    actor: SuperuserActorDep,
+    session: SessionDep,
+    min_risk_score: Annotated[int, Query(ge=1, le=1_000)] = 50,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> list[AdminReviewAutoOpenPreviewItemResponse]:
+    candidates = AdminReviewService(session).preview_auto_open_candidates(
+        actor=actor,
+        min_risk_score=min_risk_score,
+        limit=limit,
+    )
+    return [_to_auto_open_preview_response(item) for item in candidates]
+
+
+@router.post("/reviews/auto-open", response_model=AdminReviewAutoOpenResponse)
+async def auto_open_reviews(
+    payload: AdminReviewAutoOpenRequest,
+    actor: SuperuserActorDep,
+    session: SessionDep,
+) -> AdminReviewAutoOpenResponse:
+    result = AdminReviewService(session).auto_open_reviews(actor=actor, payload=payload)
+    return _to_auto_open_response(result)
 
 
 @router.get("/reviews", response_model=list[AdminReviewResponse])
@@ -168,6 +203,53 @@ def _to_review_summary_response(summary: AdminReviewSummary) -> AdminReviewSumma
         overdue_review_count=summary.overdue_review_count,
         due_today_count=summary.due_today_count,
         unassigned_active_review_count=summary.unassigned_active_review_count,
+    )
+
+
+def _to_auto_open_preview_response(
+    candidate: AdminReviewAutoOpenCandidate,
+) -> AdminReviewAutoOpenPreviewItemResponse:
+    return AdminReviewAutoOpenPreviewItemResponse(
+        organization=AdminReviewOrganizationResponse(
+            id=candidate.organization.id,
+            name=candidate.organization.name,
+            slug=candidate.organization.slug,
+            status=candidate.organization.status,
+        ),
+        risk_score=candidate.risk_score,
+        risk_level=candidate.risk_level,
+        anomaly_count=candidate.anomaly_count,
+        top_anomaly_codes=candidate.top_anomaly_codes,
+        has_active_review=candidate.has_active_review,
+        active_review_id=candidate.active_review_id,
+        suggested_priority=candidate.suggested_priority,
+        suggested_title=candidate.suggested_title,
+    )
+
+
+def _to_auto_open_response(result: AdminReviewAutoOpenResult) -> AdminReviewAutoOpenResponse:
+    return AdminReviewAutoOpenResponse(
+        created_count=result.created_count,
+        skipped_count=result.skipped_count,
+        results=[_to_auto_open_result_item_response(item) for item in result.results],
+    )
+
+
+def _to_auto_open_result_item_response(
+    item: AdminReviewAutoOpenResultItem,
+) -> AdminReviewAutoOpenResultItemResponse:
+    return AdminReviewAutoOpenResultItemResponse(
+        organization=AdminReviewOrganizationResponse(
+            id=item.organization.id,
+            name=item.organization.name,
+            slug=item.organization.slug,
+            status=item.organization.status,
+        ),
+        outcome=item.outcome,
+        review_id=item.review_id,
+        reason=item.reason,
+        risk_score=item.risk_score,
+        suggested_priority=item.suggested_priority,
     )
 
 

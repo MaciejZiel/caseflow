@@ -85,6 +85,13 @@ class AdminReviewCommentCreateRequest(BaseModel):
         return normalized
 
 
+class AdminReviewAutoOpenRequest(BaseModel):
+    min_risk_score: int = Field(default=50, ge=1, le=1_000)
+    limit: int = Field(default=25, ge=1, le=100)
+    assigned_to_user_id: UUID | None = None
+    due_in_days: int | None = Field(default=None, ge=1, le=90)
+
+
 class AdminReviewUserResponse(BaseModel):
     id: UUID
     email: str
@@ -139,3 +146,30 @@ class AdminReviewSummaryResponse(BaseModel):
     overdue_review_count: int
     due_today_count: int
     unassigned_active_review_count: int
+
+
+class AdminReviewAutoOpenPreviewItemResponse(BaseModel):
+    organization: AdminReviewOrganizationResponse
+    risk_score: int
+    risk_level: str
+    anomaly_count: int
+    top_anomaly_codes: list[str]
+    has_active_review: bool
+    active_review_id: UUID | None
+    suggested_priority: AdminReviewPriority
+    suggested_title: str
+
+
+class AdminReviewAutoOpenResultItemResponse(BaseModel):
+    organization: AdminReviewOrganizationResponse
+    outcome: str
+    review_id: UUID | None
+    reason: str | None
+    risk_score: int
+    suggested_priority: AdminReviewPriority
+
+
+class AdminReviewAutoOpenResponse(BaseModel):
+    created_count: int
+    skipped_count: int
+    results: list[AdminReviewAutoOpenResultItemResponse]

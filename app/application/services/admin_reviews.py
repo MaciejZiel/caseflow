@@ -11,12 +11,13 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.schemas.admin_reviews import (
+    AdminReviewAutoOpenRequest,
     AdminReviewCommentCreateRequest,
     AdminReviewCreateRequest,
     AdminReviewUpdateRequest,
 )
 from app.application.actors import ActorContext
-from app.application.services.admin import AdminService
+from app.application.services.admin import AdminRiskReportItem, AdminService
 from app.application.services.events import EventPublisher
 from app.core.errors import DomainValidationError, NotFoundError, PermissionDeniedError
 from app.domain.admin_reviews.models import (
@@ -111,6 +112,36 @@ class AdminReviewSummary:
     unassigned_active_review_count: int
 
 
+@dataclass(slots=True)
+class AdminReviewAutoOpenCandidate:
+    organization: AdminReviewOrganizationRef
+    risk_score: int
+    risk_level: str
+    anomaly_count: int
+    top_anomaly_codes: list[str]
+    has_active_review: bool
+    active_review_id: UUID | None
+    suggested_priority: AdminReviewPriority
+    suggested_title: str
+
+
+@dataclass(slots=True)
+class AdminReviewAutoOpenResultItem:
+    organization: AdminReviewOrganizationRef
+    outcome: str
+    review_id: UUID | None
+    reason: str | None
+    risk_score: int
+    suggested_priority: AdminReviewPriority
+
+
+@dataclass(slots=True)
+class AdminReviewAutoOpenResult:
+    created_count: int
+    skipped_count: int
+    results: list[AdminReviewAutoOpenResultItem]
+
+
 class AdminReviewService:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -183,6 +214,94 @@ class AdminReviewService:
                     AdminOrganizationReview.assigned_to_user_id.is_(None),
                 )
             ),
+        )
+
+    def preview_auto_open_candidates(
+        self,
+        *,
+        actor: ActorContext,
+        min_risk_score: int,
+        limit: int,
+    ) -> list[AdminReviewAutoOpenCandidate]:
+        self._ensure_superuser(actor)
+        risk_items = AdminService(self.session).list_risk_report(
+            actor=actor,
+            status=None,
+            search=None,
+            min_risk_score=min_risk_score,
+            limit=limit,
+        )
+        active_review_ids = self._load_active_review_ids(
+            {item.organization_id for item in risk_items}
+        )
+        return [
+            self._build_auto_open_candidate(
+                risk_item=item,
+                active_review_id=active_review_ids.get(item.organization_id),
+            )
+            for item in risk_items
+        ]
+
+    def auto_open_reviews(
+        self,
+        *,
+        actor: ActorContext,
+        payload: AdminReviewAutoOpenRequest,
+    ) -> AdminReviewAutoOpenResult:
+        self._ensure_superuser(actor)
+        candidates = self.preview_auto_open_candidates(
+            actor=actor,
+            min_risk_score=payload.min_risk_score,
+            limit=payload.limit,
+        )
+        due_at = (
+            datetime.now(UTC) + timedelta(days=payload.due_in_days)
+            if payload.due_in_days is not None
+            else None
+        )
+
+        results: list[AdminReviewAutoOpenResultItem] = []
+        created_count = 0
+        for candidate in candidates:
+            if candidate.has_active_review:
+                results.append(
+                    AdminReviewAutoOpenResultItem(
+                        organization=candidate.organization,
+                        outcome="skipped",
+                        review_id=candidate.active_review_id,
+                        reason="active_review_exists",
+                        risk_score=candidate.risk_score,
+                        suggested_priority=candidate.suggested_priority,
+                    )
+                )
+                continue
+
+            review = self.create_review(
+                actor=actor,
+                organization_id=candidate.organization.id,
+                payload=AdminReviewCreateRequest(
+                    title=candidate.suggested_title,
+                    summary=self._build_auto_open_summary(candidate),
+                    assigned_to_user_id=payload.assigned_to_user_id,
+                    due_at=due_at,
+                ),
+            )
+            created_count += 1
+            results.append(
+                AdminReviewAutoOpenResultItem(
+                    organization=candidate.organization,
+                    outcome="created",
+                    review_id=review.id,
+                    reason=None,
+                    risk_score=candidate.risk_score,
+                    suggested_priority=candidate.suggested_priority,
+                )
+            )
+
+        return AdminReviewAutoOpenResult(
+            created_count=created_count,
+            skipped_count=len(results) - created_count,
+            results=results,
         )
 
     def list_reviews(
@@ -494,6 +613,66 @@ class AdminReviewService:
                 self._build_comment_item(comment=comment, authors=comment_authors)
                 for comment in comments
             ],
+        )
+
+    def _load_active_review_ids(
+        self,
+        organization_ids: set[UUID],
+    ) -> dict[UUID, UUID]:
+        if not organization_ids:
+            return {}
+        active_review_ids: dict[UUID, UUID] = {}
+        rows = self.session.execute(
+            select(
+                AdminOrganizationReview.organization_id,
+                AdminOrganizationReview.id,
+            )
+            .where(
+                AdminOrganizationReview.organization_id.in_(organization_ids),
+                AdminOrganizationReview.status.in_(tuple(ACTIVE_REVIEW_STATUSES)),
+            )
+            .order_by(AdminOrganizationReview.updated_at.desc())
+        )
+        for organization_id, review_id in rows:
+            active_review_ids.setdefault(organization_id, review_id)
+        return active_review_ids
+
+    def _build_auto_open_candidate(
+        self,
+        *,
+        risk_item: AdminRiskReportItem,
+        active_review_id: UUID | None,
+    ) -> AdminReviewAutoOpenCandidate:
+        organization = AdminReviewOrganizationRef(
+            id=risk_item.organization_id,
+            name=risk_item.organization_name,
+            slug=risk_item.organization_slug,
+            status=risk_item.status,
+        )
+        return AdminReviewAutoOpenCandidate(
+            organization=organization,
+            risk_score=risk_item.risk_score,
+            risk_level=risk_item.risk_level,
+            anomaly_count=risk_item.anomaly_count,
+            top_anomaly_codes=list(risk_item.top_anomaly_codes),
+            has_active_review=active_review_id is not None,
+            active_review_id=active_review_id,
+            suggested_priority=self._priority_from_risk_score(risk_item.risk_score),
+            suggested_title=(
+                f"Platform review: {risk_item.organization_name} "
+                f"({risk_item.risk_level} risk)"
+            ),
+        )
+
+    @staticmethod
+    def _build_auto_open_summary(candidate: AdminReviewAutoOpenCandidate) -> str:
+        top_anomalies = ", ".join(candidate.top_anomaly_codes) or "no anomaly codes"
+        return (
+            "Opened automatically from the platform risk report. "
+            f"Risk score: {candidate.risk_score}. "
+            f"Risk level: {candidate.risk_level}. "
+            f"Anomalies detected: {candidate.anomaly_count}. "
+            f"Top anomaly codes: {top_anomalies}."
         )
 
     def _build_comment_item(
