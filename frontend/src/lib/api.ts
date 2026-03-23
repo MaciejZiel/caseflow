@@ -125,6 +125,22 @@ export async function getCase(token: string, caseId: string) {
   });
 }
 
+export async function createCase(
+  token: string,
+  payload: {
+    title: string;
+    description?: string;
+    external_id?: string;
+    priority: string;
+  },
+) {
+  return request<CaseRecord>("/cases", {
+    method: "POST",
+    token,
+    body: payload,
+  });
+}
+
 export async function listCaseComments(token: string, caseId: string) {
   return request<CaseComment[]>(`/cases/${caseId}/comments`, {
     token,

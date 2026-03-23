@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/auth-context";
-import { ApiError, getCaseSummary, listCases } from "@/lib/api";
+import { ApiError, createCase, getCaseSummary, listCases } from "@/lib/api";
 import { formatDate, formatDateTime, formatEnumLabel } from "@/lib/format";
 import type { CaseRecord, CaseSummaryReport } from "@/lib/types";
 
@@ -23,12 +24,37 @@ const statusTone: Record<string, "neutral" | "success" | "warning" | "danger"> =
 type LoadState = "loading" | "ready" | "error";
 
 export function WorkspaceDashboard() {
+  const router = useRouter();
   const { accessToken } = useAuth();
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [summary, setSummary] = useState<CaseSummaryReport | null>(null);
   const [cases, setCases] = useState<CaseRecord[]>([]);
   const [query, setQuery] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [newCaseTitle, setNewCaseTitle] = useState("");
+  const [newCaseExternalId, setNewCaseExternalId] = useState("");
+  const [newCaseDescription, setNewCaseDescription] = useState("");
+  const [newCasePriority, setNewCasePriority] = useState("normal");
+  const [isCreatingCase, setIsCreatingCase] = useState(false);
+
+  const loadDashboard = useCallback(async (token: string) => {
+    try {
+      setLoadState("loading");
+      const [nextSummary, nextCases] = await Promise.all([
+        getCaseSummary(token),
+        listCases(token),
+      ]);
+      setSummary(nextSummary);
+      setCases(nextCases);
+      setErrorMessage(null);
+      setLoadState("ready");
+    } catch (error) {
+      setLoadState("error");
+      setErrorMessage(
+        error instanceof ApiError ? error.message : "Failed to load dashboard data.",
+      );
+    }
+  }, []);
 
   useEffect(() => {
     if (accessToken == null) {
@@ -37,36 +63,18 @@ export function WorkspaceDashboard() {
     const token = accessToken;
 
     let isCancelled = false;
-    async function loadDashboard() {
-      try {
-        setLoadState("loading");
-        const [nextSummary, nextCases] = await Promise.all([
-          getCaseSummary(token),
-          listCases(token),
-        ]);
-        if (isCancelled) {
-          return;
-        }
-        setSummary(nextSummary);
-        setCases(nextCases);
-        setErrorMessage(null);
-        setLoadState("ready");
-      } catch (error) {
-        if (isCancelled) {
-          return;
-        }
-        setLoadState("error");
-        setErrorMessage(
-          error instanceof ApiError ? error.message : "Failed to load dashboard data.",
-        );
+    async function loadDashboardSafe() {
+      await loadDashboard(token);
+      if (isCancelled) {
+        return;
       }
     }
 
-    void loadDashboard();
+    void loadDashboardSafe();
     return () => {
       isCancelled = true;
     };
-  }, [accessToken]);
+  }, [accessToken, loadDashboard]);
 
   async function handleSearch() {
     if (!accessToken) {
@@ -82,6 +90,33 @@ export function WorkspaceDashboard() {
     } catch (error) {
       setLoadState("error");
       setErrorMessage(error instanceof ApiError ? error.message : "Case search failed.");
+    }
+  }
+
+  async function handleCreateCase(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!accessToken || !newCaseTitle.trim()) {
+      return;
+    }
+
+    try {
+      setIsCreatingCase(true);
+      const createdCase = await createCase(accessToken, {
+        title: newCaseTitle.trim(),
+        description: newCaseDescription.trim() || undefined,
+        external_id: newCaseExternalId.trim() || undefined,
+        priority: newCasePriority,
+      });
+      setNewCaseTitle("");
+      setNewCaseExternalId("");
+      setNewCaseDescription("");
+      setNewCasePriority("normal");
+      setErrorMessage(null);
+      router.push(`/workspace/cases/${createdCase.id}`);
+    } catch (error) {
+      setErrorMessage(error instanceof ApiError ? error.message : "Case creation failed.");
+    } finally {
+      setIsCreatingCase(false);
     }
   }
 
@@ -138,6 +173,67 @@ export function WorkspaceDashboard() {
             Use the current backend search API as the main entry point for operators jumping
             between cases.
           </p>
+
+          <form className="mt-6 grid gap-4" onSubmit={handleCreateCase}>
+            <div className="field-shell">
+              <label className="field-label" htmlFor="new-case-title">
+                Create case
+              </label>
+              <input
+                id="new-case-title"
+                value={newCaseTitle}
+                onChange={(event) => setNewCaseTitle(event.target.value)}
+                placeholder="New motor claim"
+                required
+              />
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="field-shell">
+                <label className="field-label" htmlFor="new-case-external-id">
+                  External id
+                </label>
+                <input
+                  id="new-case-external-id"
+                  value={newCaseExternalId}
+                  onChange={(event) => setNewCaseExternalId(event.target.value)}
+                  placeholder="CLM-2026-1049"
+                />
+              </div>
+
+              <div className="field-shell">
+                <label className="field-label" htmlFor="new-case-priority">
+                  Priority
+                </label>
+                <select
+                  id="new-case-priority"
+                  value={newCasePriority}
+                  onChange={(event) => setNewCasePriority(event.target.value)}
+                >
+                  <option value="low">Low</option>
+                  <option value="normal">Normal</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="field-shell">
+              <label className="field-label" htmlFor="new-case-description">
+                Description
+              </label>
+              <textarea
+                id="new-case-description"
+                value={newCaseDescription}
+                onChange={(event) => setNewCaseDescription(event.target.value)}
+                placeholder="What should the team know before opening the case?"
+              />
+            </div>
+
+            <Button disabled={isCreatingCase} type="submit">
+              {isCreatingCase ? "Creating…" : "Create and open case"}
+            </Button>
+          </form>
         </div>
       </section>
 
