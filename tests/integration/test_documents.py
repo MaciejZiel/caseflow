@@ -83,7 +83,11 @@ async def test_owner_can_create_document_and_inspect_versions_and_jobs(
 @pytest.mark.asyncio
 async def test_owner_can_list_documents_for_case(async_client: httpx.AsyncClient) -> None:
     owner = await register_owner(async_client)
-    first_case = await create_case(async_client, access_token=owner["access_token"], title="First case")
+    first_case = await create_case(
+        async_client,
+        access_token=owner["access_token"],
+        title="First case",
+    )
     second_case = await create_case(
         async_client,
         access_token=owner["access_token"],

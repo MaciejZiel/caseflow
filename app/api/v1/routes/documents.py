@@ -60,7 +60,10 @@ async def list_case_documents(
     session: SessionDep,
 ) -> list[DocumentResponse]:
     documents = DocumentService(session).list_case_documents(actor=actor, case_id=case_id)
-    return [DocumentResponse.model_validate(document, from_attributes=True) for document in documents]
+    return [
+        DocumentResponse.model_validate(document, from_attributes=True)
+        for document in documents
+    ]
 
 
 @document_router.get("/{document_id}", response_model=DocumentResponse)
