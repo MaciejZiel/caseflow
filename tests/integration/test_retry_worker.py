@@ -90,6 +90,7 @@ async def test_retry_worker_processes_due_failed_document_job(
 
     result = run_retry_cycle(limit_per_queue=10)
     assert result.processed_document_jobs == 1
+    assert result.processed_admin_notification_digests == 0
 
     refreshed_document = await async_client.get(
         f"/api/v1/documents/{document_id}",
@@ -161,6 +162,7 @@ async def test_retry_worker_processes_due_failed_webhook_delivery(
     should_fail = False
     result = run_retry_cycle(limit_per_queue=10)
     assert result.processed_webhook_deliveries == 1
+    assert result.processed_admin_notification_digests == 0
 
     refreshed_deliveries = await async_client.get(
         "/api/v1/webhooks/deliveries",

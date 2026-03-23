@@ -119,6 +119,7 @@ class AdminFailureItem:
 class AdminRetryDueResult:
     processed_document_jobs: int
     processed_webhook_deliveries: int
+    processed_admin_notification_digests: int
     processed_emails: int
 
 
@@ -611,12 +612,18 @@ class AdminService:
         processed_webhook_deliveries = len(
             WebhookService(self.session).process_due_deliveries(limit=limit_per_queue)
         )
+        from app.application.services.admin_notifications import AdminNotificationService
+
+        processed_admin_notification_digests = AdminNotificationService(
+            self.session
+        ).process_due_digests(limit=limit_per_queue)
         processed_emails = len(
             EmailOutboxService(self.session).process_due_emails(limit=limit_per_queue)
         )
         return AdminRetryDueResult(
             processed_document_jobs=processed_document_jobs,
             processed_webhook_deliveries=processed_webhook_deliveries,
+            processed_admin_notification_digests=processed_admin_notification_digests,
             processed_emails=processed_emails,
         )
 

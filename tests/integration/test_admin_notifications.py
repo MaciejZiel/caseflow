@@ -1,15 +1,23 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib import error
+from uuid import UUID
 
 import httpx
 import pytest
+from sqlalchemy import select
 
 from app.application.services import webhooks as webhook_module
+from app.domain.admin_notifications.models import (
+    AdminNotificationPreference,
+)
 from app.domain.emails.models import OutboundEmail
+from app.infrastructure.db.session import get_session_factory
+from app.workers.retries import run_retry_cycle
 from tests.integration.helpers import (
     configured_async_client,
     create_case,
@@ -245,6 +253,9 @@ async def test_notification_preferences_can_disable_auto_open_notifications(
         assert updated_preferences.status_code == 200
         assert updated_preferences.json()["email_enabled"] is False
         assert updated_preferences.json()["notify_on_review_auto_opened"] is False
+        assert updated_preferences.json()["digest_schedule"] == "disabled"
+        assert updated_preferences.json()["digest_next_due_at"] is None
+        assert updated_preferences.json()["digest_last_sent_at"] is None
 
         await _create_risky_tenant(
             async_client,
@@ -453,3 +464,115 @@ async def test_notification_digest_send_returns_not_sent_when_feed_is_empty(
         "total_count": 0,
         "template_key": None,
     }
+
+
+@pytest.mark.asyncio
+async def test_scheduled_notification_digest_is_processed_by_retry_worker(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def failing_urlopen(req: Any, timeout: int = 0) -> _FakeWebhookResponse:
+        raise error.URLError("connection refused")
+
+    def selective_email_deliver(self, email: OutboundEmail) -> str:
+        email_dir = (tmp_path / "emails").resolve()
+        email_dir.mkdir(parents=True, exist_ok=True)
+        path = email_dir / f"{email.id}.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "template_key": email.template_key,
+                    "recipient_email": email.recipient_email,
+                    "subject": email.subject,
+                    "payload": email.payload_json,
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        return str(path)
+
+    async with configured_async_client(
+        tmp_path,
+        monkeypatch,
+        env_overrides={
+            "ADMIN_FAILURE_ANOMALY_THRESHOLD": "1",
+            "EMAIL_DELIVERY_MODE": "worker",
+        },
+    ) as async_client:
+        monkeypatch.setattr(webhook_module.request, "urlopen", failing_urlopen)
+        monkeypatch.setattr(
+            "app.infrastructure.email.local.LocalEmailSink.deliver",
+            selective_email_deliver,
+        )
+
+        admin = await register_owner(
+            async_client,
+            organization_name="Platform Admins",
+            organization_slug="platform-admins",
+            email="root@example.com",
+        )
+        promote_user_to_superuser(email=admin["email"])
+
+        updated_preferences = await async_client.patch(
+            "/api/v1/admin/notifications/preferences",
+            headers={"Authorization": f"Bearer {admin['access_token']}"},
+            json={"digest_schedule": "daily"},
+        )
+        assert updated_preferences.status_code == 200
+        assert updated_preferences.json()["digest_schedule"] == "daily"
+        assert updated_preferences.json()["digest_next_due_at"] is not None
+        assert updated_preferences.json()["digest_last_sent_at"] is None
+
+        await _create_risky_tenant(
+            async_client,
+            organization_name="Scheduled Digest Target",
+            organization_slug="scheduled-digest-target",
+            email="owner@scheduled-digest-target.example.com",
+        )
+
+        auto_open = await async_client.post(
+            "/api/v1/admin/reviews/auto-open",
+            headers={"Authorization": f"Bearer {admin['access_token']}"},
+            json={"min_risk_score": 50, "limit": 10},
+        )
+        assert auto_open.status_code == 200
+        assert auto_open.json()["created_count"] == 1
+
+        session = get_session_factory()()
+        try:
+            preference = session.scalar(
+                select(AdminNotificationPreference).where(
+                    AdminNotificationPreference.user_id == UUID(admin["user_id"])
+                )
+            )
+            assert preference is not None
+            preference.digest_next_due_at = datetime.now(UTC) - timedelta(seconds=1)
+            session.commit()
+        finally:
+            session.close()
+
+        result = run_retry_cycle(limit_per_queue=10)
+        assert result.processed_admin_notification_digests == 1
+        assert result.processed_emails == 3
+
+        refreshed_preferences = await async_client.get(
+            "/api/v1/admin/notifications/preferences",
+            headers={"Authorization": f"Bearer {admin['access_token']}"},
+        )
+        assert refreshed_preferences.status_code == 200
+        preference_body = refreshed_preferences.json()
+        assert preference_body["digest_schedule"] == "daily"
+        assert preference_body["digest_last_sent_at"] is not None
+        assert preference_body["digest_next_due_at"] is not None
+
+        email_payloads = _read_email_sink_files(tmp_path / "emails")
+        digest_emails = [
+            payload
+            for payload in email_payloads
+            if payload["template_key"] == "platform_admin_notification_digest"
+        ]
+        assert len(digest_emails) == 1
+        assert digest_emails[0]["recipient_email"] == admin["email"]
+        assert digest_emails[0]["payload"]["counts_by_type"]["review_auto_opened"] == 1

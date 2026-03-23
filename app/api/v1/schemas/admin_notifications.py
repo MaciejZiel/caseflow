@@ -11,7 +11,10 @@ from app.api.v1.schemas.admin_reviews import (
     AdminReviewOrganizationResponse,
     AdminReviewUserResponse,
 )
-from app.domain.admin_notifications.models import AdminNotificationType
+from app.domain.admin_notifications.models import (
+    AdminNotificationDigestSchedule,
+    AdminNotificationType,
+)
 
 
 class AdminNotificationResponse(BaseModel):
@@ -54,12 +57,16 @@ class AdminNotificationPreferenceResponse(BaseModel):
     email_enabled: bool
     notify_on_review_auto_opened: bool
     notify_on_review_overdue_escalated: bool
+    digest_schedule: AdminNotificationDigestSchedule
+    digest_next_due_at: datetime | None
+    digest_last_sent_at: datetime | None
 
 
 class AdminNotificationPreferenceUpdateRequest(BaseModel):
     email_enabled: bool | None = None
     notify_on_review_auto_opened: bool | None = None
     notify_on_review_overdue_escalated: bool | None = None
+    digest_schedule: AdminNotificationDigestSchedule | None = None
 
     @model_validator(mode="after")
     def validate_payload(self) -> AdminNotificationPreferenceUpdateRequest:

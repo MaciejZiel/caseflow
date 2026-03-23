@@ -17,6 +17,13 @@ class AdminNotificationType(StrEnum):
     REVIEW_OVERDUE_ESCALATED = "review_overdue_escalated"
 
 
+class AdminNotificationDigestSchedule(StrEnum):
+    DISABLED = "disabled"
+    HOURLY = "hourly"
+    DAILY = "daily"
+    WEEKLY = "weekly"
+
+
 class AdminNotification(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "admin_notifications"
 
@@ -61,3 +68,20 @@ class AdminNotificationPreference(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     email_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     notify_on_review_auto_opened: Mapped[bool] = mapped_column(Boolean, default=True)
     notify_on_review_overdue_escalated: Mapped[bool] = mapped_column(Boolean, default=True)
+    digest_schedule: Mapped[AdminNotificationDigestSchedule] = mapped_column(
+        Enum(
+            AdminNotificationDigestSchedule,
+            name="admin_notification_digest_schedule",
+            native_enum=False,
+        ),
+        default=AdminNotificationDigestSchedule.DISABLED,
+    )
+    digest_next_due_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+    )
+    digest_last_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )

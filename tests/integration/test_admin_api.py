@@ -499,5 +499,6 @@ async def test_platform_admin_retry_due_processes_global_queues(
         retried_body = retried.json()
         assert retried_body["processed_document_jobs"] == 2
         assert retried_body["processed_webhook_deliveries"] == 2
+        assert retried_body["processed_admin_notification_digests"] == 0
         assert retried_body["processed_emails"] == 2
         assert len(captured_requests) == 2

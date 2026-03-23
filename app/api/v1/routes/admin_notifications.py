@@ -207,4 +207,7 @@ def _to_notification_preference_response(
         email_enabled=preference.email_enabled,
         notify_on_review_auto_opened=preference.notify_on_review_auto_opened,
         notify_on_review_overdue_escalated=preference.notify_on_review_overdue_escalated,
+        digest_schedule=preference.digest_schedule,
+        digest_next_due_at=preference.digest_next_due_at,
+        digest_last_sent_at=preference.digest_last_sent_at,
     )

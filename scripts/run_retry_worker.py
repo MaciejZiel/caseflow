@@ -29,6 +29,9 @@ def main() -> int:
             {
                 "processed_document_jobs": result.processed_document_jobs,
                 "processed_webhook_deliveries": result.processed_webhook_deliveries,
+                "processed_admin_notification_digests": (
+                    result.processed_admin_notification_digests
+                ),
                 "processed_emails": result.processed_emails,
                 "worker_poll_interval_seconds": (
                     args.poll_interval_seconds or get_settings().worker_poll_interval_seconds

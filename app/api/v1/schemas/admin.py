@@ -156,6 +156,7 @@ class AdminFailureResponse(BaseModel):
 class AdminRetryDueResponse(BaseModel):
     processed_document_jobs: int
     processed_webhook_deliveries: int
+    processed_admin_notification_digests: int
     processed_emails: int
 
 

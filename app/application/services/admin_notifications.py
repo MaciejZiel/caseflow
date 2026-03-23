@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -20,6 +20,7 @@ from app.application.services.emails import EmailOutboxService
 from app.core.errors import NotFoundError, PermissionDeniedError
 from app.domain.admin_notifications.models import (
     AdminNotification,
+    AdminNotificationDigestSchedule,
     AdminNotificationPreference,
     AdminNotificationType,
 )
@@ -67,6 +68,9 @@ class AdminNotificationPreferenceSnapshot:
     email_enabled: bool
     notify_on_review_auto_opened: bool
     notify_on_review_overdue_escalated: bool
+    digest_schedule: AdminNotificationDigestSchedule
+    digest_next_due_at: datetime | None
+    digest_last_sent_at: datetime | None
 
 
 class AdminNotificationService:
@@ -84,18 +88,13 @@ class AdminNotificationService:
         offset: int,
     ) -> list[AdminNotificationItem]:
         self._ensure_superuser(actor)
-        query = (
-            select(AdminNotification)
-            .where(AdminNotification.user_id == actor.user.id)
-            .order_by(AdminNotification.created_at.desc())
-            .limit(limit)
-            .offset(offset)
+        notifications = self._list_notification_models_for_user(
+            user_id=actor.user.id,
+            unread_only=unread_only,
+            notification_type=notification_type,
+            limit=limit,
+            offset=offset,
         )
-        if unread_only:
-            query = query.where(AdminNotification.read_at.is_(None))
-        if notification_type is not None:
-            query = query.where(AdminNotification.notification_type == notification_type)
-        notifications = list(self.session.scalars(query))
         return self._build_notification_items(notifications)
 
     def get_summary(self, *, actor: ActorContext) -> AdminNotificationSummary:
@@ -129,21 +128,11 @@ class AdminNotificationService:
         limit: int,
     ) -> AdminNotificationDigestPreview:
         self._ensure_superuser(actor)
-        notifications = self.list_notifications(
-            actor=actor,
+        return self._preview_digest_for_user(
+            user=actor.user,
             unread_only=unread_only,
-            notification_type=None,
             limit=limit,
-            offset=0,
-        )
-        counts_by_type = {notification_type.value: 0 for notification_type in AdminNotificationType}
-        for notification in notifications:
-            counts_by_type[notification.notification_type.value] += 1
-        return AdminNotificationDigestPreview(
-            total_count=len(notifications),
-            unread_only=unread_only,
-            counts_by_type=counts_by_type,
-            notifications=notifications,
+            created_after=None,
         )
 
     def send_digest(
@@ -154,10 +143,11 @@ class AdminNotificationService:
         limit: int,
     ) -> AdminNotificationDigestSendResult:
         self._ensure_superuser(actor)
-        preview = self.preview_digest(
-            actor=actor,
+        preview = self._preview_digest_for_user(
+            user=actor.user,
             unread_only=unread_only,
             limit=limit,
+            created_after=None,
         )
         if preview.total_count == 0:
             return AdminNotificationDigestSendResult(
@@ -167,28 +157,27 @@ class AdminNotificationService:
                 template_key=None,
             )
 
-        lines = [
-            f"- {notification.created_at.isoformat()} [{notification.notification_type.value}] "
-            f"{notification.title}"
-            for notification in preview.notifications
-        ]
-        email = self.email_outbox.enqueue_platform_admin_notification_email(
+        now = datetime.now(UTC)
+        email = self._enqueue_digest_email(
             organization_id=actor.organization.id,
             recipient_email=actor.user.email,
-            template_key="platform_admin_notification_digest",
-            subject="CaseFlow platform admin notification digest",
-            body_text=(
-                "Platform admin notification digest\n\n"
-                f"Unread only: {'yes' if unread_only else 'no'}\n"
-                f"Included notifications: {preview.total_count}\n\n"
-                + "\n".join(lines)
-            ),
-            payload_json={
-                "unread_only": unread_only,
-                "total_count": preview.total_count,
-                "counts_by_type": preview.counts_by_type,
-            },
+            unread_only=unread_only,
+            preview=preview,
         )
+        preference = self.session.scalar(
+            select(AdminNotificationPreference).where(
+                AdminNotificationPreference.user_id == actor.user.id
+            )
+        )
+        if (
+            preference is not None
+            and preference.digest_schedule != AdminNotificationDigestSchedule.DISABLED
+        ):
+            preference.digest_last_sent_at = now
+            preference.digest_next_due_at = self._build_next_digest_due_at(
+                schedule=preference.digest_schedule,
+                reference_time=now,
+            )
         self.session.commit()
         self.email_outbox.dispatch_enqueued_emails([email.id])
         return AdminNotificationDigestSendResult(
@@ -197,6 +186,67 @@ class AdminNotificationService:
             total_count=preview.total_count,
             template_key="platform_admin_notification_digest",
         )
+
+    def process_due_digests(
+        self,
+        *,
+        limit: int = 25,
+        unread_only: bool = True,
+        notification_limit: int = 50,
+    ) -> int:
+        now = datetime.now(UTC)
+        due_preferences = list(
+            self.session.execute(
+                select(AdminNotificationPreference, User)
+                .join(User, AdminNotificationPreference.user_id == User.id)
+                .where(
+                    User.is_superuser.is_(True),
+                    User.is_active.is_(True),
+                    AdminNotificationPreference.email_enabled.is_(True),
+                    AdminNotificationPreference.digest_schedule
+                    != AdminNotificationDigestSchedule.DISABLED,
+                    AdminNotificationPreference.digest_next_due_at.is_not(None),
+                    AdminNotificationPreference.digest_next_due_at <= now,
+                )
+                .order_by(
+                    AdminNotificationPreference.digest_next_due_at.asc(),
+                    User.created_at.asc(),
+                )
+                .limit(limit)
+            )
+        )
+        if not due_preferences:
+            return 0
+
+        email_ids: list[UUID] = []
+        sent_digests = 0
+        for preference, user in due_preferences:
+            preview = self._preview_digest_for_user(
+                user=user,
+                unread_only=unread_only,
+                limit=notification_limit,
+                created_after=preference.digest_last_sent_at,
+            )
+            preference.digest_next_due_at = self._build_next_digest_due_at(
+                schedule=preference.digest_schedule,
+                reference_time=now,
+            )
+            if preview.total_count == 0:
+                continue
+            email = self._enqueue_digest_email(
+                organization_id=None,
+                recipient_email=user.email,
+                unread_only=unread_only,
+                preview=preview,
+            )
+            preference.digest_last_sent_at = now
+            self.session.flush()
+            email_ids.append(email.id)
+            sent_digests += 1
+
+        self.session.commit()
+        self.email_outbox.dispatch_enqueued_emails(email_ids)
+        return sent_digests
 
     def get_preferences(self, *, actor: ActorContext) -> AdminNotificationPreferenceSnapshot:
         self._ensure_superuser(actor)
@@ -211,8 +261,24 @@ class AdminNotificationService:
     ) -> AdminNotificationPreferenceSnapshot:
         self._ensure_superuser(actor)
         preference = self._get_or_create_preference(actor.user)
+        now = datetime.now(UTC)
         for field_name in payload.model_fields_set:
             setattr(preference, field_name, getattr(payload, field_name))
+        if "digest_schedule" in payload.model_fields_set:
+            preference.digest_next_due_at = self._build_next_digest_due_at(
+                schedule=preference.digest_schedule,
+                reference_time=now,
+            )
+        elif (
+            "email_enabled" in payload.model_fields_set
+            and preference.email_enabled
+            and preference.digest_schedule != AdminNotificationDigestSchedule.DISABLED
+            and preference.digest_next_due_at is None
+        ):
+            preference.digest_next_due_at = self._build_next_digest_due_at(
+                schedule=preference.digest_schedule,
+                reference_time=now,
+            )
         self.session.commit()
         return self._build_preference_snapshot(user=actor.user, preference=preference)
 
@@ -424,6 +490,9 @@ class AdminNotificationService:
             email_enabled=True,
             notify_on_review_auto_opened=True,
             notify_on_review_overdue_escalated=True,
+            digest_schedule=AdminNotificationDigestSchedule.DISABLED,
+            digest_next_due_at=None,
+            digest_last_sent_at=None,
         )
 
     def _get_or_create_preference(self, user: User) -> AdminNotificationPreference:
@@ -439,6 +508,9 @@ class AdminNotificationService:
             email_enabled=True,
             notify_on_review_auto_opened=True,
             notify_on_review_overdue_escalated=True,
+            digest_schedule=AdminNotificationDigestSchedule.DISABLED,
+            digest_next_due_at=None,
+            digest_last_sent_at=None,
         )
         self.session.add(preference)
         self.session.flush()
@@ -460,7 +532,112 @@ class AdminNotificationService:
             email_enabled=preference.email_enabled,
             notify_on_review_auto_opened=preference.notify_on_review_auto_opened,
             notify_on_review_overdue_escalated=preference.notify_on_review_overdue_escalated,
+            digest_schedule=preference.digest_schedule,
+            digest_next_due_at=preference.digest_next_due_at,
+            digest_last_sent_at=preference.digest_last_sent_at,
         )
+
+    def _preview_digest_for_user(
+        self,
+        *,
+        user: User,
+        unread_only: bool,
+        limit: int,
+        created_after: datetime | None,
+    ) -> AdminNotificationDigestPreview:
+        notifications = self._build_notification_items(
+            self._list_notification_models_for_user(
+                user_id=user.id,
+                unread_only=unread_only,
+                notification_type=None,
+                limit=limit,
+                offset=0,
+                created_after=created_after,
+            )
+        )
+        counts_by_type = {notification_type.value: 0 for notification_type in AdminNotificationType}
+        for notification in notifications:
+            counts_by_type[notification.notification_type.value] += 1
+        return AdminNotificationDigestPreview(
+            total_count=len(notifications),
+            unread_only=unread_only,
+            counts_by_type=counts_by_type,
+            notifications=notifications,
+        )
+
+    def _list_notification_models_for_user(
+        self,
+        *,
+        user_id: UUID,
+        unread_only: bool,
+        notification_type: AdminNotificationType | None,
+        limit: int,
+        offset: int,
+        created_after: datetime | None = None,
+    ) -> list[AdminNotification]:
+        query = (
+            select(AdminNotification)
+            .where(AdminNotification.user_id == user_id)
+            .order_by(AdminNotification.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        if unread_only:
+            query = query.where(AdminNotification.read_at.is_(None))
+        if notification_type is not None:
+            query = query.where(AdminNotification.notification_type == notification_type)
+        if created_after is not None:
+            query = query.where(AdminNotification.created_at > created_after)
+        return list(self.session.scalars(query))
+
+    def _enqueue_digest_email(
+        self,
+        *,
+        organization_id: UUID | None,
+        recipient_email: str,
+        unread_only: bool,
+        preview: AdminNotificationDigestPreview,
+    ):
+        lines = [
+            f"- {notification.created_at.isoformat()} [{notification.notification_type.value}] "
+            f"{notification.title}"
+            for notification in preview.notifications
+        ]
+        return self.email_outbox.enqueue_platform_admin_notification_email(
+            organization_id=organization_id,
+            recipient_email=recipient_email,
+            template_key="platform_admin_notification_digest",
+            subject="CaseFlow platform admin notification digest",
+            body_text=(
+                "Platform admin notification digest\n\n"
+                f"Unread only: {'yes' if unread_only else 'no'}\n"
+                f"Included notifications: {preview.total_count}\n\n"
+                + "\n".join(lines)
+            ),
+            payload_json={
+                "unread_only": unread_only,
+                "total_count": preview.total_count,
+                "counts_by_type": preview.counts_by_type,
+                "notification_ids": [
+                    str(notification.id) for notification in preview.notifications
+                ],
+            },
+        )
+
+    @staticmethod
+    def _build_next_digest_due_at(
+        *,
+        schedule: AdminNotificationDigestSchedule,
+        reference_time: datetime,
+    ) -> datetime | None:
+        if schedule == AdminNotificationDigestSchedule.DISABLED:
+            return None
+        delta_by_schedule = {
+            AdminNotificationDigestSchedule.HOURLY: timedelta(hours=1),
+            AdminNotificationDigestSchedule.DAILY: timedelta(days=1),
+            AdminNotificationDigestSchedule.WEEKLY: timedelta(days=7),
+        }
+        return reference_time + delta_by_schedule[schedule]
 
     def _load_organizations(
         self,

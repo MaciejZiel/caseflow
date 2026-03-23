@@ -1,4 +1,4 @@
-"""Retry worker entrypoints for due jobs and webhook deliveries."""
+"""Retry worker entrypoints for due jobs, digests and outbound deliveries."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from app.infrastructure.db.session import get_session_factory
 class RetryCycleResult:
     processed_document_jobs: int
     processed_webhook_deliveries: int
+    processed_admin_notification_digests: int
     processed_emails: int
 
 
@@ -28,12 +29,18 @@ def run_retry_cycle(*, limit_per_queue: int = 50) -> RetryCycleResult:
         processed_webhook_deliveries = len(
             WebhookService(session).process_due_deliveries(limit=limit_per_queue)
         )
+        from app.application.services.admin_notifications import AdminNotificationService
+
+        processed_admin_notification_digests = AdminNotificationService(
+            session
+        ).process_due_digests(limit=limit_per_queue)
         processed_emails = len(
             EmailOutboxService(session).process_due_emails(limit=limit_per_queue)
         )
         return RetryCycleResult(
             processed_document_jobs=processed_document_jobs,
             processed_webhook_deliveries=processed_webhook_deliveries,
+            processed_admin_notification_digests=processed_admin_notification_digests,
             processed_emails=processed_emails,
         )
     finally:
