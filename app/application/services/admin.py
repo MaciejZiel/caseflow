@@ -196,6 +196,7 @@ class AdminService:
             status=status,
             search=search,
             limit=limit,
+            organization_id=None,
         )
 
     def _fetch_organization_snapshots(
@@ -204,6 +205,7 @@ class AdminService:
         status: OrganizationStatus | None,
         search: str | None,
         limit: int | None,
+        organization_id: UUID | None,
     ) -> list[AdminOrganizationListItem]:
         normalized_search = " ".join(search.split()).strip().lower() if search else None
         now = datetime.now(UTC)
@@ -312,6 +314,8 @@ class AdminService:
 
         if status is not None:
             query = query.where(Organization.status == status)
+        if organization_id is not None:
+            query = query.where(Organization.id == organization_id)
         if normalized_search is not None:
             search_pattern = f"%{normalized_search}%"
             query = query.where(
@@ -651,6 +655,7 @@ class AdminService:
             status=status,
             search=search,
             limit=None,
+            organization_id=None,
         )
         anomaly_index = self._index_anomalies_by_organization(self._collect_anomalies())
 
@@ -671,6 +676,26 @@ class AdminService:
             )
         )
         return report[:limit]
+
+    def get_organization_risk_report(
+        self,
+        *,
+        actor: ActorContext,
+        organization_id: UUID,
+    ) -> AdminRiskReportItem:
+        self._ensure_superuser(actor)
+        self._get_organization(organization_id)
+        organizations = self._fetch_organization_snapshots(
+            status=None,
+            search=None,
+            limit=1,
+            organization_id=organization_id,
+        )
+        anomaly_index = self._index_anomalies_by_organization(self._collect_anomalies())
+        return self._build_risk_report_item(
+            organization=organizations[0],
+            anomalies=anomaly_index.get(organization_id, []),
+        )
 
     def export_organizations_csv(
         self,
