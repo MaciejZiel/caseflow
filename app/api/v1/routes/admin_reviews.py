@@ -11,6 +11,10 @@ from sqlalchemy.orm import Session
 from app.api.deps.auth import SuperuserActor, get_current_superuser_actor
 from app.api.v1.schemas.admin_reviews import (
     AdminReviewAttentionResponse,
+    AdminReviewAutoAssignPreviewItemResponse,
+    AdminReviewAutoAssignRequest,
+    AdminReviewAutoAssignResponse,
+    AdminReviewAutoAssignResultItemResponse,
     AdminReviewAutoOpenPreviewItemResponse,
     AdminReviewAutoOpenRequest,
     AdminReviewAutoOpenResponse,
@@ -32,6 +36,9 @@ from app.api.v1.schemas.admin_reviews import (
 )
 from app.application.services.admin_reviews import (
     AdminReviewAttentionItem,
+    AdminReviewAutoAssignPreviewItem,
+    AdminReviewAutoAssignResult,
+    AdminReviewAutoAssignResultItem,
     AdminReviewAutoOpenCandidate,
     AdminReviewAutoOpenResult,
     AdminReviewAutoOpenResultItem,
@@ -88,6 +95,35 @@ async def list_attention_queue(
         limit=limit,
     )
     return [_to_review_attention_response(item) for item in attention_items]
+
+
+@router.get(
+    "/reviews/auto-assign-preview",
+    response_model=list[AdminReviewAutoAssignPreviewItemResponse],
+)
+async def preview_auto_assign_reviews(
+    actor: SuperuserActorDep,
+    session: SessionDep,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> list[AdminReviewAutoAssignPreviewItemResponse]:
+    preview_items = AdminReviewService(session).preview_auto_assignments(
+        actor=actor,
+        limit=limit,
+    )
+    return [_to_auto_assign_preview_response(item) for item in preview_items]
+
+
+@router.post("/reviews/auto-assign", response_model=AdminReviewAutoAssignResponse)
+async def auto_assign_reviews(
+    payload: AdminReviewAutoAssignRequest,
+    actor: SuperuserActorDep,
+    session: SessionDep,
+) -> AdminReviewAutoAssignResponse:
+    result = AdminReviewService(session).auto_assign_reviews(
+        actor=actor,
+        payload=payload,
+    )
+    return _to_auto_assign_response(result)
 
 
 @router.get(
@@ -300,6 +336,55 @@ def _to_auto_open_response(result: AdminReviewAutoOpenResult) -> AdminReviewAuto
         created_count=result.created_count,
         skipped_count=result.skipped_count,
         results=[_to_auto_open_result_item_response(item) for item in result.results],
+    )
+
+
+def _to_auto_assign_preview_response(
+    item: AdminReviewAutoAssignPreviewItem,
+) -> AdminReviewAutoAssignPreviewItemResponse:
+    return AdminReviewAutoAssignPreviewItemResponse(
+        review_id=item.review_id,
+        organization=AdminReviewOrganizationResponse(
+            id=item.organization.id,
+            name=item.organization.name,
+            slug=item.organization.slug,
+            status=item.organization.status,
+        ),
+        title=item.title,
+        priority=item.priority,
+        due_at=item.due_at,
+        attention_reasons=item.attention_reasons,
+        suggested_assignee=_to_review_user_response(item.suggested_assignee),
+        current_assignee_load=item.current_assignee_load,
+        projected_assignee_load=item.projected_assignee_load,
+    )
+
+
+def _to_auto_assign_response(
+    result: AdminReviewAutoAssignResult,
+) -> AdminReviewAutoAssignResponse:
+    return AdminReviewAutoAssignResponse(
+        assigned_count=result.assigned_count,
+        skipped_count=result.skipped_count,
+        results=[_to_auto_assign_result_item_response(item) for item in result.results],
+    )
+
+
+def _to_auto_assign_result_item_response(
+    item: AdminReviewAutoAssignResultItem,
+) -> AdminReviewAutoAssignResultItemResponse:
+    return AdminReviewAutoAssignResultItemResponse(
+        review_id=item.review_id,
+        organization=AdminReviewOrganizationResponse(
+            id=item.organization.id,
+            name=item.organization.name,
+            slug=item.organization.slug,
+            status=item.organization.status,
+        ),
+        outcome=item.outcome,
+        reason=item.reason,
+        assigned_to=_to_review_user_response(item.assigned_to),
+        added_comment=item.added_comment,
     )
 
 

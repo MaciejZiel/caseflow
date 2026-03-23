@@ -104,6 +104,16 @@ class AdminReviewEscalateOverdueRequest(BaseModel):
         return _normalize_optional_text(value)
 
 
+class AdminReviewAutoAssignRequest(BaseModel):
+    limit: int = Field(default=25, ge=1, le=100)
+    comment_body: str | None = Field(default=None, max_length=5000)
+
+    @field_validator("comment_body", mode="before")
+    @classmethod
+    def normalize_comment_body(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value)
+
+
 class AdminReviewUserResponse(BaseModel):
     id: UUID
     email: str
@@ -177,6 +187,33 @@ class AdminReviewAttentionResponse(AdminReviewResponse):
     attention_reasons: list[str]
     days_overdue: int | None
     hours_until_due: int | None
+
+
+class AdminReviewAutoAssignPreviewItemResponse(BaseModel):
+    review_id: UUID
+    organization: AdminReviewOrganizationResponse
+    title: str
+    priority: AdminReviewPriority
+    due_at: datetime | None
+    attention_reasons: list[str]
+    suggested_assignee: AdminReviewUserResponse
+    current_assignee_load: int
+    projected_assignee_load: int
+
+
+class AdminReviewAutoAssignResultItemResponse(BaseModel):
+    review_id: UUID
+    organization: AdminReviewOrganizationResponse
+    outcome: str
+    reason: str | None
+    assigned_to: AdminReviewUserResponse | None
+    added_comment: bool
+
+
+class AdminReviewAutoAssignResponse(BaseModel):
+    assigned_count: int
+    skipped_count: int
+    results: list[AdminReviewAutoAssignResultItemResponse]
 
 
 class AdminReviewAutoOpenPreviewItemResponse(BaseModel):

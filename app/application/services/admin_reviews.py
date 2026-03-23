@@ -11,6 +11,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.v1.schemas.admin_reviews import (
+    AdminReviewAutoAssignRequest,
     AdminReviewAutoOpenRequest,
     AdminReviewCommentCreateRequest,
     AdminReviewCreateRequest,
@@ -163,6 +164,36 @@ class AdminReviewAutoOpenResult:
     created_count: int
     skipped_count: int
     results: list[AdminReviewAutoOpenResultItem]
+
+
+@dataclass(slots=True)
+class AdminReviewAutoAssignPreviewItem:
+    review_id: UUID
+    organization: AdminReviewOrganizationRef
+    title: str
+    priority: AdminReviewPriority
+    due_at: datetime | None
+    attention_reasons: list[str]
+    suggested_assignee: AdminReviewUserRef
+    current_assignee_load: int
+    projected_assignee_load: int
+
+
+@dataclass(slots=True)
+class AdminReviewAutoAssignResultItem:
+    review_id: UUID
+    organization: AdminReviewOrganizationRef
+    outcome: str
+    reason: str | None
+    assigned_to: AdminReviewUserRef | None
+    added_comment: bool
+
+
+@dataclass(slots=True)
+class AdminReviewAutoAssignResult:
+    assigned_count: int
+    skipped_count: int
+    results: list[AdminReviewAutoAssignResultItem]
 
 
 @dataclass(slots=True)
@@ -410,6 +441,131 @@ class AdminReviewService:
 
         items.sort(key=self._attention_item_sort_key)
         return items[:limit]
+
+    def preview_auto_assignments(
+        self,
+        *,
+        actor: ActorContext,
+        limit: int,
+    ) -> list[AdminReviewAutoAssignPreviewItem]:
+        self._ensure_superuser(actor)
+        now = datetime.now(UTC)
+        reviews = [
+            review
+            for review in self._list_active_reviews()
+            if review.assigned_to_user_id is None
+        ]
+        if not reviews:
+            return []
+
+        reviewers = self._list_assignable_reviewers_with_load()
+        if not reviewers:
+            return []
+
+        organizations = self._load_organizations({review.organization_id for review in reviews})
+        preview_items: list[AdminReviewAutoAssignPreviewItem] = []
+        sorted_reviews = sorted(
+            reviews,
+            key=lambda review: self._attention_sort_components(review=review, now=now),
+        )
+        for review in sorted_reviews[:limit]:
+            next_reviewer = min(
+                reviewers,
+                key=lambda item: (item["projected_load"], item["sort_order"]),
+            )
+            current_load = next_reviewer["projected_load"]
+            next_reviewer["projected_load"] = current_load + 1
+            preview_items.append(
+                AdminReviewAutoAssignPreviewItem(
+                    review_id=review.id,
+                    organization=organizations[review.organization_id],
+                    title=review.title,
+                    priority=review.priority,
+                    due_at=self._review_due_at(review),
+                    attention_reasons=self._build_attention_reasons(review=review, now=now),
+                    suggested_assignee=next_reviewer["user"],
+                    current_assignee_load=current_load,
+                    projected_assignee_load=current_load + 1,
+                )
+            )
+        return preview_items
+
+    def auto_assign_reviews(
+        self,
+        *,
+        actor: ActorContext,
+        payload: AdminReviewAutoAssignRequest,
+    ) -> AdminReviewAutoAssignResult:
+        self._ensure_superuser(actor)
+        previews = self.preview_auto_assignments(actor=actor, limit=payload.limit)
+        user_ids = {item.suggested_assignee.id for item in previews}
+        assignees = self._load_users(user_ids)
+
+        assigned_count = 0
+        results: list[AdminReviewAutoAssignResultItem] = []
+        for preview in previews:
+            review = self._get_review(preview.review_id)
+            if (
+                review.status not in ACTIVE_REVIEW_STATUSES
+                or review.assigned_to_user_id is not None
+            ):
+                results.append(
+                    AdminReviewAutoAssignResultItem(
+                        review_id=preview.review_id,
+                        organization=preview.organization,
+                        outcome="skipped",
+                        reason="review_no_longer_unassigned",
+                        assigned_to=(
+                            assignees.get(review.assigned_to_user_id)
+                            if review.assigned_to_user_id is not None
+                            else None
+                        ),
+                        added_comment=False,
+                    )
+                )
+                continue
+
+            previous_values = self._review_snapshot(review)
+            review.assigned_to_user_id = preview.suggested_assignee.id
+            self.session.flush()
+            self.publisher.record_event(
+                organization_id=review.organization_id,
+                actor_user_id=actor.user.id,
+                event_type="admin_review.updated",
+                entity_type="admin_review",
+                entity_id=review.id,
+                old_values=previous_values,
+                new_values=self._review_snapshot(review),
+                metadata={
+                    "updated_fields": ["assigned_to_user_id"],
+                    "update_reason": "auto_assign_unassigned",
+                },
+                deliver_webhooks=False,
+            )
+            self._create_comment_record(
+                actor=actor,
+                review=review,
+                body=payload.comment_body
+                or "Assigned automatically from the platform review auto-assignment queue.",
+            )
+            assigned_count += 1
+            results.append(
+                AdminReviewAutoAssignResultItem(
+                    review_id=preview.review_id,
+                    organization=preview.organization,
+                    outcome="assigned",
+                    reason=None,
+                    assigned_to=assignees[preview.suggested_assignee.id],
+                    added_comment=True,
+                )
+            )
+
+        self.session.commit()
+        return AdminReviewAutoAssignResult(
+            assigned_count=assigned_count,
+            skipped_count=len(results) - assigned_count,
+            results=results,
+        )
 
     def auto_open_reviews(
         self,
@@ -979,6 +1135,45 @@ class AdminReviewService:
                 )
             )
         )
+
+    def _list_assignable_reviewers_with_load(self) -> list[dict[str, object]]:
+        users = list(
+            self.session.scalars(
+                select(User)
+                .where(
+                    User.is_superuser.is_(True),
+                    User.is_active.is_(True),
+                )
+                .order_by(User.created_at.asc())
+            )
+        )
+        active_loads = {
+            user_id: count
+            for user_id, count in self.session.execute(
+                select(
+                    AdminOrganizationReview.assigned_to_user_id,
+                    func.count(AdminOrganizationReview.id),
+                )
+                .where(
+                    AdminOrganizationReview.status.in_(tuple(ACTIVE_REVIEW_STATUSES)),
+                    AdminOrganizationReview.assigned_to_user_id.is_not(None),
+                )
+                .group_by(AdminOrganizationReview.assigned_to_user_id)
+            )
+        }
+        return [
+            {
+                "user": AdminReviewUserRef(
+                    id=user.id,
+                    email=user.email,
+                    first_name=user.first_name,
+                    last_name=user.last_name,
+                ),
+                "projected_load": int(active_loads.get(user.id, 0) or 0),
+                "sort_order": index,
+            }
+            for index, user in enumerate(users)
+        ]
 
     def _build_auto_open_candidate(
         self,

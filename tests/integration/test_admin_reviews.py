@@ -331,6 +331,126 @@ async def test_platform_admin_review_workload_and_attention_queue(
 
 
 @pytest.mark.asyncio
+async def test_platform_admin_can_preview_and_auto_assign_unassigned_reviews(
+    async_client: httpx.AsyncClient,
+) -> None:
+    admin = await register_owner(
+        async_client,
+        organization_name="Platform Admins",
+        organization_slug="platform-admins",
+        email="root@example.com",
+    )
+    promote_user_to_superuser(email=admin["email"])
+
+    second_admin = await register_owner(
+        async_client,
+        organization_name="Platform Ops",
+        organization_slug="platform-ops",
+        email="ops@example.com",
+    )
+    promote_user_to_superuser(email=second_admin["email"])
+
+    now = datetime.now(UTC)
+    first_tenant = await register_owner(
+        async_client,
+        organization_name="Assigned Tenant",
+        organization_slug="assigned-tenant",
+        email="owner@assigned-tenant.example.com",
+    )
+    second_tenant = await register_owner(
+        async_client,
+        organization_name="Auto Assign One",
+        organization_slug="auto-assign-one",
+        email="owner@auto-assign-one.example.com",
+    )
+    third_tenant = await register_owner(
+        async_client,
+        organization_name="Auto Assign Two",
+        organization_slug="auto-assign-two",
+        email="owner@auto-assign-two.example.com",
+    )
+
+    seeded_load = await async_client.post(
+        f"/api/v1/admin/organizations/{first_tenant['organization_id']}/reviews",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        json={
+            "title": "Seed reviewer load",
+            "assigned_to_user_id": admin["user_id"],
+            "due_at": (now + timedelta(days=1)).isoformat(),
+        },
+    )
+    assert seeded_load.status_code == 201
+
+    first_unassigned = await async_client.post(
+        f"/api/v1/admin/organizations/{second_tenant['organization_id']}/reviews",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        json={
+            "title": "First unassigned review",
+            "due_at": (now - timedelta(days=1)).isoformat(),
+            "priority": "high",
+        },
+    )
+    assert first_unassigned.status_code == 201
+
+    second_unassigned = await async_client.post(
+        f"/api/v1/admin/organizations/{third_tenant['organization_id']}/reviews",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        json={
+            "title": "Second unassigned review",
+            "due_at": (now + timedelta(days=2)).isoformat(),
+        },
+    )
+    assert second_unassigned.status_code == 201
+
+    preview = await async_client.get(
+        "/api/v1/admin/reviews/auto-assign-preview",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        params={"limit": 10},
+    )
+    assert preview.status_code == 200
+    preview_body = preview.json()
+    assert [item["review_id"] for item in preview_body] == [
+        first_unassigned.json()["id"],
+        second_unassigned.json()["id"],
+    ]
+    assert preview_body[0]["suggested_assignee"]["email"] == second_admin["email"]
+    assert preview_body[0]["current_assignee_load"] == 0
+    assert preview_body[0]["projected_assignee_load"] == 1
+    assert preview_body[1]["suggested_assignee"]["email"] == admin["email"]
+    assert preview_body[1]["projected_assignee_load"] == 2
+
+    auto_assign = await async_client.post(
+        "/api/v1/admin/reviews/auto-assign",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        json={"limit": 10},
+    )
+    assert auto_assign.status_code == 200
+    auto_assign_body = auto_assign.json()
+    assert auto_assign_body["assigned_count"] == 2
+    assert auto_assign_body["skipped_count"] == 0
+    assert [item["assigned_to"]["email"] for item in auto_assign_body["results"]] == [
+        second_admin["email"],
+        admin["email"],
+    ]
+
+    first_detail = await async_client.get(
+        f"/api/v1/admin/reviews/{first_unassigned.json()['id']}",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+    )
+    assert first_detail.status_code == 200
+    assert first_detail.json()["assigned_to"]["email"] == second_admin["email"]
+    assert first_detail.json()["comment_count"] == 1
+    assert "assigned automatically" in first_detail.json()["comments"][0]["body"].lower()
+
+    second_detail = await async_client.get(
+        f"/api/v1/admin/reviews/{second_unassigned.json()['id']}",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+    )
+    assert second_detail.status_code == 200
+    assert second_detail.json()["assigned_to"]["email"] == admin["email"]
+
+
+@pytest.mark.asyncio
 async def test_platform_admin_can_preview_and_auto_open_reviews_from_risk_report(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
