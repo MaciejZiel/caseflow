@@ -92,6 +92,18 @@ class AdminReviewAutoOpenRequest(BaseModel):
     due_in_days: int | None = Field(default=None, ge=1, le=90)
 
 
+class AdminReviewEscalateOverdueRequest(BaseModel):
+    min_days_overdue: int = Field(default=1, ge=1, le=365)
+    limit: int = Field(default=25, ge=1, le=100)
+    assigned_to_user_id: UUID | None = None
+    comment_body: str | None = Field(default=None, max_length=5000)
+
+    @field_validator("comment_body", mode="before")
+    @classmethod
+    def normalize_comment_body(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value)
+
+
 class AdminReviewUserResponse(BaseModel):
     id: UUID
     email: str
@@ -173,3 +185,35 @@ class AdminReviewAutoOpenResponse(BaseModel):
     created_count: int
     skipped_count: int
     results: list[AdminReviewAutoOpenResultItemResponse]
+
+
+class AdminReviewEscalationPreviewItemResponse(BaseModel):
+    review_id: UUID
+    organization: AdminReviewOrganizationResponse
+    title: str
+    priority: AdminReviewPriority
+    due_at: datetime
+    assigned_to: AdminReviewUserResponse | None
+    days_overdue: int
+    risk_score_snapshot: int
+    risk_level_snapshot: str
+    needs_priority_bump: bool
+    is_unassigned: bool
+
+
+class AdminReviewEscalationResultItemResponse(BaseModel):
+    review_id: UUID
+    organization: AdminReviewOrganizationResponse
+    outcome: str
+    reason: str | None
+    previous_priority: AdminReviewPriority
+    current_priority: AdminReviewPriority
+    assigned_to: AdminReviewUserResponse | None
+    days_overdue: int
+    added_comment: bool
+
+
+class AdminReviewEscalateOverdueResponse(BaseModel):
+    escalated_count: int
+    skipped_count: int
+    results: list[AdminReviewEscalationResultItemResponse]

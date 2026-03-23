@@ -14,6 +14,7 @@ from app.api.v1.schemas.admin_reviews import (
     AdminReviewAutoOpenRequest,
     AdminReviewCommentCreateRequest,
     AdminReviewCreateRequest,
+    AdminReviewEscalateOverdueRequest,
     AdminReviewUpdateRequest,
 )
 from app.application.actors import ActorContext
@@ -140,6 +141,41 @@ class AdminReviewAutoOpenResult:
     created_count: int
     skipped_count: int
     results: list[AdminReviewAutoOpenResultItem]
+
+
+@dataclass(slots=True)
+class AdminReviewEscalationPreviewItem:
+    review_id: UUID
+    organization: AdminReviewOrganizationRef
+    title: str
+    priority: AdminReviewPriority
+    due_at: datetime
+    assigned_to: AdminReviewUserRef | None
+    days_overdue: int
+    risk_score_snapshot: int
+    risk_level_snapshot: str
+    needs_priority_bump: bool
+    is_unassigned: bool
+
+
+@dataclass(slots=True)
+class AdminReviewEscalationResultItem:
+    review_id: UUID
+    organization: AdminReviewOrganizationRef
+    outcome: str
+    reason: str | None
+    previous_priority: AdminReviewPriority
+    current_priority: AdminReviewPriority
+    assigned_to: AdminReviewUserRef | None
+    days_overdue: int
+    added_comment: bool
+
+
+@dataclass(slots=True)
+class AdminReviewEscalateOverdueResult:
+    escalated_count: int
+    skipped_count: int
+    results: list[AdminReviewEscalationResultItem]
 
 
 class AdminReviewService:
@@ -301,6 +337,141 @@ class AdminReviewService:
         return AdminReviewAutoOpenResult(
             created_count=created_count,
             skipped_count=len(results) - created_count,
+            results=results,
+        )
+
+    def preview_overdue_escalations(
+        self,
+        *,
+        actor: ActorContext,
+        min_days_overdue: int,
+        limit: int,
+    ) -> list[AdminReviewEscalationPreviewItem]:
+        self._ensure_superuser(actor)
+        now = datetime.now(UTC)
+        reviews = list(
+            self.session.scalars(
+                select(AdminOrganizationReview)
+                .where(
+                    AdminOrganizationReview.status.in_(tuple(ACTIVE_REVIEW_STATUSES)),
+                    AdminOrganizationReview.due_at.is_not(None),
+                    AdminOrganizationReview.due_at
+                    <= now - timedelta(days=min_days_overdue),
+                )
+                .order_by(
+                    AdminOrganizationReview.due_at.asc(),
+                    AdminOrganizationReview.updated_at.desc(),
+                )
+                .limit(limit)
+            )
+        )
+        return [
+            self._build_escalation_preview_item(review=review, now=now)
+            for review in reviews
+        ]
+
+    def escalate_overdue_reviews(
+        self,
+        *,
+        actor: ActorContext,
+        payload: AdminReviewEscalateOverdueRequest,
+    ) -> AdminReviewEscalateOverdueResult:
+        self._ensure_superuser(actor)
+        assignee = self._resolve_assignee(payload.assigned_to_user_id)
+        previews = self.preview_overdue_escalations(
+            actor=actor,
+            min_days_overdue=payload.min_days_overdue,
+            limit=payload.limit,
+        )
+
+        results: list[AdminReviewEscalationResultItem] = []
+        escalated_count = 0
+        for preview in previews:
+            review = self._get_review(preview.review_id)
+            old_values = self._review_snapshot(review)
+            priority_changed = False
+            assignee_changed = False
+
+            if review.priority != AdminReviewPriority.URGENT:
+                review.priority = AdminReviewPriority.URGENT
+                priority_changed = True
+
+            if assignee is not None and review.assigned_to_user_id != assignee.id:
+                review.assigned_to_user_id = assignee.id
+                assignee_changed = True
+
+            if not priority_changed and not assignee_changed:
+                results.append(
+                    AdminReviewEscalationResultItem(
+                        review_id=review.id,
+                        organization=preview.organization,
+                        outcome="skipped",
+                        reason="already_escalated",
+                        previous_priority=preview.priority,
+                        current_priority=review.priority,
+                        assigned_to=preview.assigned_to,
+                        days_overdue=preview.days_overdue,
+                        added_comment=False,
+                    )
+                )
+                continue
+
+            self.session.flush()
+            self.publisher.record_event(
+                organization_id=review.organization_id,
+                actor_user_id=actor.user.id,
+                event_type="admin_review.updated",
+                entity_type="admin_review",
+                entity_id=review.id,
+                old_values=old_values,
+                new_values=self._review_snapshot(review),
+                metadata={
+                    "updated_fields": sorted(
+                        {
+                            field_name
+                            for field_name, changed in {
+                                "priority": priority_changed,
+                                "assigned_to_user_id": assignee_changed,
+                            }.items()
+                            if changed
+                        }
+                    ),
+                    "update_reason": "overdue_escalation",
+                    "days_overdue": preview.days_overdue,
+                },
+                deliver_webhooks=False,
+            )
+
+            comment_body = payload.comment_body or (
+                "Escalated automatically because the review is overdue by "
+                f"{preview.days_overdue} day(s)."
+            )
+            self._create_comment_record(
+                actor=actor,
+                review=review,
+                body=comment_body,
+            )
+            self.session.commit()
+
+            detail = self.get_review(actor=actor, review_id=review.id)
+            escalated_count += 1
+            results.append(
+                AdminReviewEscalationResultItem(
+                    review_id=review.id,
+                    organization=detail.organization,
+                    outcome="escalated",
+                    reason=None,
+                    previous_priority=preview.priority,
+                    current_priority=detail.priority,
+                    assigned_to=detail.assigned_to,
+                    days_overdue=preview.days_overdue,
+                    added_comment=True,
+                )
+            )
+
+        return AdminReviewEscalateOverdueResult(
+            escalated_count=escalated_count,
+            skipped_count=len(results) - escalated_count,
             results=results,
         )
 
@@ -484,23 +655,10 @@ class AdminReviewService:
     ) -> AdminReviewCommentItem:
         self._ensure_superuser(actor)
         review = self._get_review(review_id)
-        comment = AdminOrganizationReviewComment(
-            organization_id=review.organization_id,
-            review_id=review.id,
-            author_user_id=actor.user.id,
+        comment = self._create_comment_record(
+            actor=actor,
+            review=review,
             body=payload.body,
-        )
-        self.session.add(comment)
-        self.session.flush()
-        self.publisher.record_event(
-            organization_id=review.organization_id,
-            actor_user_id=actor.user.id,
-            event_type="admin_review.comment_added",
-            entity_type="admin_review",
-            entity_id=review.id,
-            new_values={"comment_id": comment.id},
-            metadata={"body_excerpt": payload.body[:120]},
-            deliver_webhooks=False,
         )
         self.session.commit()
         return self._build_comment_item(
@@ -514,6 +672,33 @@ class AdminReviewService:
                 )
             },
         )
+
+    def _create_comment_record(
+        self,
+        *,
+        actor: ActorContext,
+        review: AdminOrganizationReview,
+        body: str,
+    ) -> AdminOrganizationReviewComment:
+        comment = AdminOrganizationReviewComment(
+            organization_id=review.organization_id,
+            review_id=review.id,
+            author_user_id=actor.user.id,
+            body=body,
+        )
+        self.session.add(comment)
+        self.session.flush()
+        self.publisher.record_event(
+            organization_id=review.organization_id,
+            actor_user_id=actor.user.id,
+            event_type="admin_review.comment_added",
+            entity_type="admin_review",
+            entity_id=review.id,
+            new_values={"comment_id": comment.id},
+            metadata={"body_excerpt": body[:120]},
+            deliver_webhooks=False,
+        )
+        return comment
 
     def _build_review_list_items(
         self,
@@ -675,6 +860,29 @@ class AdminReviewService:
             f"Top anomaly codes: {top_anomalies}."
         )
 
+    def _build_escalation_preview_item(
+        self,
+        *,
+        review: AdminOrganizationReview,
+        now: datetime,
+    ) -> AdminReviewEscalationPreviewItem:
+        details = self._build_review_list_items([review])[0]
+        due_at = _to_utc(review.due_at)
+        days_overdue = max(1, int((now - due_at).total_seconds() // 86_400))
+        return AdminReviewEscalationPreviewItem(
+            review_id=review.id,
+            organization=details.organization,
+            title=review.title,
+            priority=review.priority,
+            due_at=due_at,
+            assigned_to=details.assigned_to,
+            days_overdue=days_overdue,
+            risk_score_snapshot=review.risk_score_snapshot,
+            risk_level_snapshot=review.risk_level_snapshot,
+            needs_priority_bump=review.priority != AdminReviewPriority.URGENT,
+            is_unassigned=review.assigned_to_user_id is None,
+        )
+
     def _build_comment_item(
         self,
         *,
@@ -812,3 +1020,9 @@ class AdminReviewService:
 
     def _count_rows(self, statement) -> int:
         return int(self.session.scalar(statement) or 0)
+
+
+def _to_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

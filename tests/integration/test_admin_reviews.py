@@ -311,6 +311,128 @@ async def test_platform_admin_can_preview_and_auto_open_reviews_from_risk_report
 
 
 @pytest.mark.asyncio
+async def test_platform_admin_can_preview_and_escalate_overdue_reviews(
+    async_client: httpx.AsyncClient,
+) -> None:
+    admin = await register_owner(
+        async_client,
+        organization_name="Platform Admins",
+        organization_slug="platform-admins",
+        email="root@example.com",
+    )
+    promote_user_to_superuser(email=admin["email"])
+
+    tenant = await register_owner(
+        async_client,
+        organization_name="Overdue Review Tenant",
+        organization_slug="overdue-review-tenant",
+        email="owner@overdue-review.example.com",
+    )
+
+    created_review = await async_client.post(
+        f"/api/v1/admin/organizations/{tenant['organization_id']}/reviews",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        json={
+            "title": "Overdue platform review",
+            "due_at": "2024-01-10T09:00:00Z",
+        },
+    )
+    assert created_review.status_code == 201
+    created_body = created_review.json()
+    assert created_body["priority"] == "low"
+
+    preview = await async_client.get(
+        "/api/v1/admin/reviews/escalation-preview",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        params={"min_days_overdue": 1, "limit": 10},
+    )
+    assert preview.status_code == 200
+    preview_body = preview.json()
+    assert len(preview_body) == 1
+    assert preview_body[0]["review_id"] == created_body["id"]
+    assert preview_body[0]["needs_priority_bump"] is True
+    assert preview_body[0]["is_unassigned"] is True
+    assert preview_body[0]["days_overdue"] >= 1
+
+    escalated = await async_client.post(
+        "/api/v1/admin/reviews/escalate-overdue",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        json={
+            "min_days_overdue": 1,
+            "limit": 10,
+            "assigned_to_user_id": admin["user_id"],
+        },
+    )
+    assert escalated.status_code == 200
+    escalated_body = escalated.json()
+    assert escalated_body["escalated_count"] == 1
+    assert escalated_body["skipped_count"] == 0
+    assert escalated_body["results"][0]["outcome"] == "escalated"
+    assert escalated_body["results"][0]["previous_priority"] == "low"
+    assert escalated_body["results"][0]["current_priority"] == "urgent"
+    assert escalated_body["results"][0]["added_comment"] is True
+
+    detail = await async_client.get(
+        f"/api/v1/admin/reviews/{created_body['id']}",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+    )
+    assert detail.status_code == 200
+    detail_body = detail.json()
+    assert detail_body["priority"] == "urgent"
+    assert detail_body["assigned_to"]["email"] == admin["email"]
+    assert detail_body["comment_count"] == 1
+    assert "overdue" in detail_body["comments"][0]["body"].lower()
+
+
+@pytest.mark.asyncio
+async def test_overdue_escalation_skips_reviews_that_are_already_escalated(
+    async_client: httpx.AsyncClient,
+) -> None:
+    admin = await register_owner(
+        async_client,
+        organization_name="Platform Admins",
+        organization_slug="platform-admins",
+        email="root@example.com",
+    )
+    promote_user_to_superuser(email=admin["email"])
+
+    tenant = await register_owner(
+        async_client,
+        organization_name="Already Escalated Tenant",
+        organization_slug="already-escalated-tenant",
+        email="owner@already-escalated.example.com",
+    )
+
+    created_review = await async_client.post(
+        f"/api/v1/admin/organizations/{tenant['organization_id']}/reviews",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        json={
+            "title": "Already urgent review",
+            "priority": "urgent",
+            "assigned_to_user_id": admin["user_id"],
+            "due_at": "2024-01-10T09:00:00Z",
+        },
+    )
+    assert created_review.status_code == 201
+
+    escalated = await async_client.post(
+        "/api/v1/admin/reviews/escalate-overdue",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        json={
+            "min_days_overdue": 1,
+            "limit": 10,
+            "assigned_to_user_id": admin["user_id"],
+        },
+    )
+    assert escalated.status_code == 200
+    escalated_body = escalated.json()
+    assert escalated_body["escalated_count"] == 0
+    assert escalated_body["skipped_count"] == 1
+    assert escalated_body["results"][0]["outcome"] == "skipped"
+    assert escalated_body["results"][0]["reason"] == "already_escalated"
+
+
+@pytest.mark.asyncio
 async def test_platform_admin_review_queue_enforces_assignee_rules_and_active_uniqueness(
     async_client: httpx.AsyncClient,
 ) -> None:

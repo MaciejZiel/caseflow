@@ -18,6 +18,10 @@ from app.api.v1.schemas.admin_reviews import (
     AdminReviewCommentResponse,
     AdminReviewCreateRequest,
     AdminReviewDetailResponse,
+    AdminReviewEscalateOverdueRequest,
+    AdminReviewEscalateOverdueResponse,
+    AdminReviewEscalationPreviewItemResponse,
+    AdminReviewEscalationResultItemResponse,
     AdminReviewOrganizationResponse,
     AdminReviewResponse,
     AdminReviewSummaryResponse,
@@ -30,6 +34,9 @@ from app.application.services.admin_reviews import (
     AdminReviewAutoOpenResultItem,
     AdminReviewCommentItem,
     AdminReviewDetail,
+    AdminReviewEscalateOverdueResult,
+    AdminReviewEscalationPreviewItem,
+    AdminReviewEscalationResultItem,
     AdminReviewListItem,
     AdminReviewService,
     AdminReviewSummary,
@@ -79,6 +86,37 @@ async def auto_open_reviews(
 ) -> AdminReviewAutoOpenResponse:
     result = AdminReviewService(session).auto_open_reviews(actor=actor, payload=payload)
     return _to_auto_open_response(result)
+
+
+@router.get(
+    "/reviews/escalation-preview",
+    response_model=list[AdminReviewEscalationPreviewItemResponse],
+)
+async def preview_overdue_review_escalations(
+    actor: SuperuserActorDep,
+    session: SessionDep,
+    min_days_overdue: Annotated[int, Query(ge=1, le=365)] = 1,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> list[AdminReviewEscalationPreviewItemResponse]:
+    previews = AdminReviewService(session).preview_overdue_escalations(
+        actor=actor,
+        min_days_overdue=min_days_overdue,
+        limit=limit,
+    )
+    return [_to_escalation_preview_response(item) for item in previews]
+
+
+@router.post("/reviews/escalate-overdue", response_model=AdminReviewEscalateOverdueResponse)
+async def escalate_overdue_reviews(
+    payload: AdminReviewEscalateOverdueRequest,
+    actor: SuperuserActorDep,
+    session: SessionDep,
+) -> AdminReviewEscalateOverdueResponse:
+    result = AdminReviewService(session).escalate_overdue_reviews(
+        actor=actor,
+        payload=payload,
+    )
+    return _to_escalation_response(result)
 
 
 @router.get("/reviews", response_model=list[AdminReviewResponse])
@@ -250,6 +288,60 @@ def _to_auto_open_result_item_response(
         reason=item.reason,
         risk_score=item.risk_score,
         suggested_priority=item.suggested_priority,
+    )
+
+
+def _to_escalation_preview_response(
+    item: AdminReviewEscalationPreviewItem,
+) -> AdminReviewEscalationPreviewItemResponse:
+    return AdminReviewEscalationPreviewItemResponse(
+        review_id=item.review_id,
+        organization=AdminReviewOrganizationResponse(
+            id=item.organization.id,
+            name=item.organization.name,
+            slug=item.organization.slug,
+            status=item.organization.status,
+        ),
+        title=item.title,
+        priority=item.priority,
+        due_at=item.due_at,
+        assigned_to=_to_review_user_response(item.assigned_to),
+        days_overdue=item.days_overdue,
+        risk_score_snapshot=item.risk_score_snapshot,
+        risk_level_snapshot=item.risk_level_snapshot,
+        needs_priority_bump=item.needs_priority_bump,
+        is_unassigned=item.is_unassigned,
+    )
+
+
+def _to_escalation_response(
+    result: AdminReviewEscalateOverdueResult,
+) -> AdminReviewEscalateOverdueResponse:
+    return AdminReviewEscalateOverdueResponse(
+        escalated_count=result.escalated_count,
+        skipped_count=result.skipped_count,
+        results=[_to_escalation_result_item_response(item) for item in result.results],
+    )
+
+
+def _to_escalation_result_item_response(
+    item: AdminReviewEscalationResultItem,
+) -> AdminReviewEscalationResultItemResponse:
+    return AdminReviewEscalationResultItemResponse(
+        review_id=item.review_id,
+        organization=AdminReviewOrganizationResponse(
+            id=item.organization.id,
+            name=item.organization.name,
+            slug=item.organization.slug,
+            status=item.organization.status,
+        ),
+        outcome=item.outcome,
+        reason=item.reason,
+        previous_priority=item.previous_priority,
+        current_priority=item.current_priority,
+        assigned_to=_to_review_user_response(item.assigned_to),
+        days_overdue=item.days_overdue,
+        added_comment=item.added_comment,
     )
 
 
