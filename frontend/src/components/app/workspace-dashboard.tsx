@@ -76,7 +76,8 @@ export function WorkspaceDashboard() {
     };
   }, [accessToken, loadDashboard]);
 
-  async function handleSearch() {
+  async function handleSearch(event?: React.FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
     if (!accessToken) {
       return;
     }
@@ -87,6 +88,7 @@ export function WorkspaceDashboard() {
       });
       setCases(nextCases);
       setLoadState("ready");
+      setErrorMessage(null);
     } catch (error) {
       setLoadState("error");
       setErrorMessage(error instanceof ApiError ? error.message : "Case search failed.");
@@ -127,63 +129,94 @@ export function WorkspaceDashboard() {
     return Object.entries(summary.priority_counts).sort((left, right) => right[1] - left[1]);
   }, [summary]);
 
+  const nextDueCase = useMemo(
+    () => cases.find((caseItem) => caseItem.due_date) ?? null,
+    [cases],
+  );
+
   return (
     <div className="space-y-6">
-      <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="surface-card">
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
-            Workspace health
-          </p>
-          <div className="mt-5 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <h2 className="text-4xl font-semibold tracking-[-0.05em] text-slate-950 md:text-5xl">
-                Review-heavy operations, now visible.
-              </h2>
-              <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
-                Use the existing reporting surfaces to surface workload, due dates and active
-                cases. The next steps will wire this dashboard into assistant flows and document
-                retrieval.
-              </p>
+      <section className="grid gap-6 2xl:grid-cols-[1.18fr_0.82fr]">
+        <div className="surface-panel-dark relative overflow-hidden p-6 text-slate-50 md:p-8">
+          <div className="absolute right-[-5rem] top-[-3rem] h-52 w-52 rounded-full bg-orange-500/16 blur-3xl" />
+          <div className="absolute bottom-[-5rem] left-[-2rem] h-48 w-48 rounded-full bg-teal-400/10 blur-3xl" />
+          <div className="relative">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-slate-400">
+              Operations cockpit
+            </p>
+            <h2 className="mt-5 max-w-4xl text-4xl font-semibold tracking-[-0.07em] text-white md:text-6xl">
+              See workload, unblock cases and move review work faster.
+            </h2>
+            <p className="mt-5 max-w-2xl text-base leading-8 text-slate-300">
+              This dashboard turns the existing backend into a believable product surface:
+              reporting, search, case creation and AI-ready operational context in one place.
+            </p>
+
+            <div className="mt-8 grid gap-4 md:grid-cols-3">
+              <HeroMetric
+                label="Active"
+                value={summary?.active_cases}
+                helper="Cases in motion right now"
+              />
+              <HeroMetric
+                label="Due in 7 days"
+                value={summary?.due_next_7_days}
+                helper="Short-term review pressure"
+              />
+              <HeroMetric
+                label="Overdue"
+                value={summary?.overdue_cases}
+                helper="Needs immediate attention"
+              />
             </div>
-            <div className="rounded-[1.7rem] bg-slate-950 px-5 py-4 text-slate-50">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                Current baseline
-              </p>
-              <p className="mt-3 text-3xl font-semibold tracking-[-0.04em]">
-                {summary?.active_cases ?? "—"}
-              </p>
-              <p className="mt-1 text-sm text-slate-300">active cases in the workspace</p>
-            </div>
+
+            <form
+              className="mt-8 grid gap-3 rounded-[1.7rem] border border-white/10 bg-white/6 p-4 lg:grid-cols-[minmax(0,1fr)_auto]"
+              onSubmit={(event) => void handleSearch(event)}
+            >
+              <div>
+                <label className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">
+                  Quick search
+                </label>
+                <input
+                  className="mt-3 border-white/10 bg-white/8 text-white placeholder:text-slate-500"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search by case title, external id or description"
+                />
+              </div>
+              <div className="flex items-end">
+                <Button className="w-full justify-center lg:w-auto" type="submit">
+                  Search queue
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
 
-        <div className="surface-card">
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">
-            Search desk
-          </p>
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search by title, external id or description"
-            />
-            <Button onClick={() => void handleSearch()}>Search cases</Button>
+        <div className="surface-card p-6 md:p-7">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="eyebrow">New case</p>
+              <h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-slate-950">
+                Open work without leaving the dashboard
+              </h2>
+            </div>
+            <span className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-orange-900">
+              Fast path
+            </span>
           </div>
-          <p className="mt-4 text-sm leading-7 text-slate-600">
-            Use the current backend search API as the main entry point for operators jumping
-            between cases.
-          </p>
 
           <form className="mt-6 grid gap-4" onSubmit={handleCreateCase}>
             <div className="field-shell">
               <label className="field-label" htmlFor="new-case-title">
-                Create case
+                Case title
               </label>
               <input
                 id="new-case-title"
                 value={newCaseTitle}
                 onChange={(event) => setNewCaseTitle(event.target.value)}
-                placeholder="New motor claim"
+                placeholder="Vehicle collision claim"
                 required
               />
             </div>
@@ -191,7 +224,7 @@ export function WorkspaceDashboard() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="field-shell">
                 <label className="field-label" htmlFor="new-case-external-id">
-                  External id
+                  External reference
                 </label>
                 <input
                   id="new-case-external-id"
@@ -220,169 +253,123 @@ export function WorkspaceDashboard() {
 
             <div className="field-shell">
               <label className="field-label" htmlFor="new-case-description">
-                Description
+                Intake note
               </label>
               <textarea
                 id="new-case-description"
                 value={newCaseDescription}
                 onChange={(event) => setNewCaseDescription(event.target.value)}
-                placeholder="What should the team know before opening the case?"
+                placeholder="Summarize what operators should know before the first review pass."
               />
             </div>
 
-            <Button disabled={isCreatingCase} type="submit">
-              {isCreatingCase ? "Creating…" : "Create and open case"}
+            <Button disabled={isCreatingCase} fullWidth type="submit">
+              {isCreatingCase ? "Creating case…" : "Create and open case"}
             </Button>
           </form>
         </div>
       </section>
 
-      {loadState === "error" ? (
+      {errorMessage ? (
         <section className="surface-card border-rose-200 bg-rose-50/75">
-          <p className="text-xs font-semibold uppercase tracking-[0.26em] text-rose-700">
-            Dashboard error
-          </p>
+          <p className="eyebrow text-rose-700">Dashboard notice</p>
           <p className="mt-3 text-base text-rose-900">{errorMessage}</p>
         </section>
       ) : null}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Total cases" value={summary?.total_cases} helper="All tracked cases" />
-        <MetricCard
-          label="Due in 7 days"
-          value={summary?.due_next_7_days}
-          helper="Short-term workload pressure"
-        />
-        <MetricCard
-          label="Overdue"
-          value={summary?.overdue_cases}
-          helper="Needs immediate triage"
-        />
+        <MetricCard label="Total cases" value={summary?.total_cases} helper="All tracked work" />
         <MetricCard
           label="Archived"
           value={summary?.archived_cases}
-          helper="Completed or retired work"
+          helper="Closed or retired cases"
+        />
+        <MetricCard
+          label="Priority levels"
+          value={prioritySnapshot.length}
+          helper="Distinct urgency buckets in use"
+        />
+        <MetricCard
+          label="Next due"
+          value={nextDueCase ? formatDate(nextDueCase.due_date) : "No deadlines"}
+          helper="Closest visible case deadline"
         />
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <div id="cases" className="surface-card">
-          <div className="flex items-center justify-between gap-4">
+      <section className="grid gap-6 2xl:grid-cols-[1.16fr_0.84fr]">
+        <div id="cases" className="surface-card p-6 md:p-7">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
-                Recent cases
-              </p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">
+              <p className="eyebrow">Case queue</p>
+              <h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-slate-950">
                 Cases worth opening next
               </h2>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+                This queue is backed by real backend search and case data. It is the main proof
+                that the product is more than a landing page around AI.
+              </p>
             </div>
-            <span className="rounded-full bg-slate-200/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700">
+            <span className="rounded-full border border-slate-200 bg-white/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-700">
               {cases.length} loaded
             </span>
           </div>
 
-          <div className="mt-5 overflow-hidden rounded-[1.7rem] border border-slate-200/80">
-            <div className="grid grid-cols-[1.4fr_0.7fr_0.7fr_0.7fr] gap-4 bg-slate-950 px-5 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-300">
-              <span>Case</span>
-              <span>Status</span>
-              <span>Priority</span>
-              <span>Updated</span>
-            </div>
-            <div className="divide-y divide-slate-200/80 bg-white/70">
-              {loadState === "loading" ? (
-                <div className="px-5 py-6 text-sm text-slate-500">Loading cases…</div>
-              ) : cases.length === 0 ? (
-                <div className="px-5 py-6 text-sm text-slate-500">
-                  No cases found for this filter.
-                </div>
-              ) : (
-                cases.map((caseItem) => (
-                  <Link
-                    key={caseItem.id}
-                    href={`/workspace/cases/${caseItem.id}`}
-                    className="grid grid-cols-[1.4fr_0.7fr_0.7fr_0.7fr] gap-4 px-5 py-4 transition-colors hover:bg-slate-50"
-                  >
-                    <div>
-                      <p className="font-semibold text-slate-900">{caseItem.title}</p>
-                      <p className="mt-1 text-sm text-slate-500">
-                        {caseItem.external_id ?? "No external reference"}
-                      </p>
-                    </div>
-                    <div className="self-center">
-                      <Badge
-                        value={caseItem.status}
-                        tone={statusTone[caseItem.status] ?? "neutral"}
-                      />
-                    </div>
-                    <div className="self-center text-sm text-slate-600">
-                      {formatEnumLabel(caseItem.priority)}
-                    </div>
-                    <div className="self-center text-sm text-slate-600">
-                      {formatDateTime(caseItem.updated_at)}
-                    </div>
-                  </Link>
-                ))
-              )}
-            </div>
+          <div className="mt-6 grid gap-4">
+            {loadState === "loading" ? (
+              <EmptyQueueCard message="Loading cases from the workspace…" />
+            ) : cases.length === 0 ? (
+              <EmptyQueueCard message="No cases found for this filter." />
+            ) : (
+              cases.map((caseItem) => (
+                <QueueRow key={caseItem.id} caseItem={caseItem} />
+              ))
+            )}
           </div>
         </div>
 
         <div className="space-y-6">
-          <div className="surface-card">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
-              Priority mix
-            </p>
-            <div className="mt-4 space-y-3">
+          <div className="surface-card p-6 md:p-7">
+            <p className="eyebrow">Priority mix</p>
+            <h2 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-slate-950">
+              What the queue looks like right now
+            </h2>
+            <div className="mt-6 space-y-3">
               {prioritySnapshot.length === 0 ? (
                 <p className="text-sm text-slate-500">Priority data will appear after loading.</p>
               ) : (
                 prioritySnapshot.map(([priority, count]) => (
-                  <div
+                  <PriorityStrip
                     key={priority}
-                    className="flex items-center justify-between rounded-[1.4rem] border border-slate-200/70 bg-white/70 px-4 py-3"
-                  >
-                    <span className="text-sm font-medium text-slate-700">
-                      {formatEnumLabel(priority)}
-                    </span>
-                    <span className="font-mono text-sm text-slate-500">{count}</span>
-                  </div>
+                    count={count}
+                    label={formatEnumLabel(priority)}
+                    total={summary?.total_cases ?? 0}
+                  />
                 ))
               )}
             </div>
           </div>
 
-          <div className="surface-card">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
-              Operator notes
+          <div className="surface-panel-dark p-6 text-slate-50 md:p-7">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">
+              Queue intelligence
             </p>
-            <div className="mt-4 rounded-[1.6rem] bg-[linear-gradient(135deg,#0f1720,#1f3144)] p-5 text-slate-50">
-              <p className="text-sm font-medium text-slate-200">Suggested next iteration</p>
-              <p className="mt-3 text-lg font-semibold tracking-[-0.03em]">
-                Connect case detail pages to documents, comments and assistant workflows.
+            <h2 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-white">
+              Product story, not just metrics
+            </h2>
+            <p className="mt-4 text-sm leading-7 text-slate-300">
+              The next interaction after this dashboard is a case workbench with documents,
+              comments, audit trail and grounded assistant threads. That progression is what makes
+              the app feel real.
+            </p>
+            <div className="mt-6 rounded-[1.5rem] border border-white/10 bg-white/6 p-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                Earliest due case
               </p>
-              <p className="mt-3 text-sm leading-7 text-slate-300">
-                This dashboard already reads real backend data. The next passes will expose
-                document listings per case and an assistant that can answer with grounded
-                references.
+              <p className="mt-3 text-lg font-semibold text-white">
+                {nextDueCase
+                  ? `${nextDueCase.title} · ${formatDate(nextDueCase.due_date)}`
+                  : "No due dates available"}
               </p>
-            </div>
-
-            <div className="mt-4 rounded-[1.6rem] border border-slate-200/80 bg-white/70 p-5">
-              <p className="text-sm font-semibold text-slate-800">Upcoming due dates</p>
-              <p className="mt-2 text-sm leading-7 text-slate-600">
-                Cases with a deadline show up with human-friendly dates so the workspace already
-                feels productized before the AI layer lands.
-              </p>
-              <div className="mt-4 rounded-2xl bg-slate-100/80 px-4 py-3 text-sm text-slate-700">
-                Next due date on the board:{" "}
-                <span className="font-semibold">
-                  {cases.find((caseItem) => caseItem.due_date)?.title
-                    ? `${cases.find((caseItem) => caseItem.due_date)?.title} · ${formatDate(
-                        cases.find((caseItem) => caseItem.due_date)?.due_date,
-                      )}`
-                    : "No due dates available"}
-                </span>
-              </div>
             </div>
           </div>
         </div>
@@ -391,7 +378,7 @@ export function WorkspaceDashboard() {
   );
 }
 
-function MetricCard({
+function HeroMetric({
   label,
   value,
   helper,
@@ -401,12 +388,120 @@ function MetricCard({
   helper: string;
 }) {
   return (
-    <article className="surface-card">
-      <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">{label}</p>
-      <p className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-slate-950">
+    <article className="rounded-[1.5rem] border border-white/10 bg-white/6 p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+        {label}
+      </p>
+      <p className="mt-3 text-4xl font-semibold tracking-[-0.06em] text-white">
         {typeof value === "number" ? value : "—"}
+      </p>
+      <p className="mt-2 text-sm text-slate-300">{helper}</p>
+    </article>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  helper,
+}: {
+  label: string;
+  value: number | string | undefined;
+  helper: string;
+}) {
+  return (
+    <article className="surface-card p-6">
+      <p className="eyebrow">{label}</p>
+      <p className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-slate-950">
+        {value ?? "—"}
       </p>
       <p className="mt-2 text-sm leading-7 text-slate-600">{helper}</p>
     </article>
+  );
+}
+
+function EmptyQueueCard({ message }: { message: string }) {
+  return (
+    <div className="rounded-[1.7rem] border border-dashed border-slate-300 bg-white/50 px-5 py-8 text-sm text-slate-500">
+      {message}
+    </div>
+  );
+}
+
+function QueueRow({ caseItem }: { caseItem: CaseRecord }) {
+  return (
+    <Link
+      className="surface-panel grid gap-4 p-5 transition-transform hover:-translate-y-0.5"
+      href={`/workspace/cases/${caseItem.id}`}
+    >
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-xl font-semibold tracking-[-0.03em] text-slate-950">
+              {caseItem.title}
+            </p>
+            <Badge value={caseItem.status} tone={statusTone[caseItem.status] ?? "neutral"} />
+            <Badge value={caseItem.priority} />
+          </div>
+          <p className="mt-3 text-sm leading-7 text-slate-600">
+            {caseItem.description || "No description has been added to this case yet."}
+          </p>
+        </div>
+
+        <div className="rounded-[1.2rem] border border-slate-200 bg-white/70 px-3 py-2 text-sm font-semibold text-slate-700">
+          Open case
+        </div>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <QueueMeta
+          label="External reference"
+          value={caseItem.external_id ?? "No external reference"}
+        />
+        <QueueMeta
+          label="Due date"
+          value={caseItem.due_date ? formatDate(caseItem.due_date) : "No deadline"}
+        />
+        <QueueMeta label="Last updated" value={formatDateTime(caseItem.updated_at)} />
+      </div>
+    </Link>
+  );
+}
+
+function QueueMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[1.1rem] bg-slate-100/85 px-4 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+        {label}
+      </p>
+      <p className="mt-2 text-sm font-medium text-slate-800">{value}</p>
+    </div>
+  );
+}
+
+function PriorityStrip({
+  label,
+  count,
+  total,
+}: {
+  label: string;
+  count: number;
+  total: number;
+}) {
+  const widthPercent = total > 0 ? Math.max((count / total) * 100, 8) : 8;
+
+  return (
+    <div className="rounded-[1.4rem] border border-slate-200/70 bg-white/75 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-slate-800">{label}</p>
+        <span className="font-mono text-sm text-slate-500">{count}</span>
+      </div>
+      <div className="mt-3 h-2 rounded-full bg-slate-100">
+        <div
+          className="h-2 rounded-full bg-[linear-gradient(90deg,#ff7a45,#c1421a)]"
+          style={{ width: `${Math.min(widthPercent, 100)}%` }}
+        />
+      </div>
+    </div>
   );
 }

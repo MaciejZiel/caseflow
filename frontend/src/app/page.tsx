@@ -1,51 +1,70 @@
 import Link from "next/link";
 
+const trustSignals = [
+  "multi-tenant auth and org isolation",
+  "case and document workflows backed by a real API",
+  "grounded assistant answers with citations",
+  "audit, comments and operational history in one workspace",
+];
+
 const featureCards = [
   {
-    eyebrow: "Operations-first AI",
-    title: "Case-based workspace",
+    eyebrow: "Case workbench",
+    title: "One place for cases, evidence and AI help",
     description:
-      "Track document-heavy cases with status, owners, due dates, history and a structure that fits real operations work.",
+      "Operators move through a single workspace with case status, document uploads, comments, audit activity and grounded AI support.",
   },
   {
-    eyebrow: "Grounded workflows",
-    title: "Documents with provenance",
+    eyebrow: "Grounded assistant",
+    title: "Answers tied back to real case evidence",
     description:
-      "Uploads, version history, extracted payloads and review steps make the app look like a product, not a toy chatbot.",
+      "Assistant threads are stored per case and return citations so the AI layer looks productized instead of speculative.",
   },
   {
-    eyebrow: "Full-stack baseline",
-    title: "FastAPI backend + Next frontend",
+    eyebrow: "Production posture",
+    title: "Built on top of an already serious backend",
     description:
-      "The frontend is built to sit on top of the existing API surface and showcase auth, reporting, cases and assistant UX.",
+      "The frontend exposes auth, reporting, queue views and document-heavy workflows rather than hiding them behind swagger pages.",
   },
 ];
 
-const productSignals = [
-  "organization auth and session management",
-  "case reporting and recent workload overview",
-  "document uploads, reviews and processing history",
-  "AI assistant entry point designed around cases, not generic chat",
+const outcomeCards = [
+  {
+    label: "Review throughput",
+    value: "24 active",
+    description: "Operators can spot queue pressure, overdue work and cases likely to block next.",
+  },
+  {
+    label: "Evidence trail",
+    value: "312 docs",
+    description: "Documents, versions and audit events stay attached to the case instead of living in chat history.",
+  },
+  {
+    label: "Grounded AI",
+    value: "4 modes",
+    description: "Summary, review assistant, next actions and general Q&A all work inside the same case context.",
+  },
 ];
 
 export default function Home() {
   return (
     <main className="relative isolate overflow-hidden">
-      <div className="absolute inset-x-0 top-[-16rem] -z-10 h-[28rem] bg-[radial-gradient(circle_at_top,_rgba(201,109,45,0.22),_transparent_58%)]" />
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-16 px-6 py-10 lg:px-10 lg:py-14">
-        <header className="flex items-center justify-between rounded-full border border-white/50 bg-white/70 px-5 py-3 shadow-[0_18px_60px_-32px_rgba(15,23,32,0.35)] backdrop-blur">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[linear-gradient(135deg,#0f1720,#27445d)] text-sm font-semibold uppercase tracking-[0.24em] text-white">
+      <div className="absolute inset-x-0 top-[-16rem] -z-10 h-[30rem] bg-[radial-gradient(circle_at_top,_rgba(255,122,69,0.22),_transparent_58%)]" />
+      <div className="mx-auto flex w-full max-w-[1500px] flex-col gap-8 px-6 py-6 lg:px-10 lg:py-10">
+        <header className="surface-card flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-4">
+            <div className="surface-panel-dark flex h-14 w-14 items-center justify-center rounded-[1.4rem] text-lg font-semibold text-white">
               CF
             </div>
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
-                Caseflow AI
+              <p className="eyebrow">Caseflow AI</p>
+              <p className="mt-2 text-sm text-slate-600">
+                AI-assisted operations workspace for document-heavy case teams
               </p>
-              <p className="text-sm text-slate-700">Case operations for document-heavy teams</p>
             </div>
           </div>
-          <div className="flex gap-3">
+
+          <div className="flex flex-wrap gap-3">
             <Link className="button button-secondary" href="/auth/login">
               Sign in
             </Link>
@@ -55,89 +74,99 @@ export default function Home() {
           </div>
         </header>
 
-        <section className="grid gap-10 lg:grid-cols-[1.2fr_0.8fr] lg:items-end">
-          <div className="space-y-8">
-            <div className="space-y-4">
-              <span className="inline-flex rounded-full border border-amber-400/50 bg-amber-100/80 px-4 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-amber-900">
-                Multi-tenant case intelligence
-              </span>
-              <h1 className="max-w-4xl text-5xl font-semibold leading-[1.02] tracking-[-0.05em] text-slate-950 md:text-7xl">
-                Turn case management into something operators can actually trust.
-              </h1>
-              <p className="max-w-2xl text-lg leading-8 text-slate-600 md:text-xl">
-                Caseflow AI wraps a production-style backend with a modern workspace for
-                reviewing cases, handling documents and layering grounded AI help on top of
-                existing operational flows.
+        <section className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
+          <div className="surface-panel-dark relative overflow-hidden p-8 text-slate-50 md:p-10">
+            <div className="absolute right-[-6rem] top-[-5rem] h-52 w-52 rounded-full bg-orange-500/18 blur-3xl" />
+            <div className="absolute bottom-[-8rem] left-[-3rem] h-56 w-56 rounded-full bg-teal-400/12 blur-3xl" />
+            <div className="relative">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.34em] text-slate-400">
+                Portfolio-grade full stack product
               </p>
-            </div>
+              <h1 className="mt-6 max-w-4xl text-5xl font-semibold leading-[0.94] tracking-[-0.08em] text-white md:text-7xl">
+                Case operations that look and feel like a real SaaS product.
+              </h1>
+              <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">
+                Caseflow AI layers a modern workbench on top of a serious backend so auth,
+                reporting, evidence handling and grounded AI are visible the moment someone opens
+                the app.
+              </p>
 
-            <div className="flex flex-wrap gap-3">
-              <Link className="button button-primary" href="/auth/register">
-                Create organization
-              </Link>
-              <Link className="button button-secondary" href="/workspace">
-                Open dashboard
-              </Link>
-            </div>
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link className="button button-primary" href="/workspace">
+                  Open demo workspace
+                </Link>
+                <Link className="button button-secondary border-white/10 bg-white/6 text-white" href="/auth/register">
+                  Create organization
+                </Link>
+              </div>
 
-            <div className="grid gap-3 md:grid-cols-2">
-              {productSignals.map((signal) => (
-                <div key={signal} className="surface-card surface-card-muted">
-                  <p className="text-sm font-medium text-slate-700">{signal}</p>
-                </div>
-              ))}
+              <div className="mt-10 grid gap-3 md:grid-cols-2">
+                {trustSignals.map((signal) => (
+                  <div
+                    key={signal}
+                    className="rounded-[1.35rem] border border-white/10 bg-white/6 px-4 py-4 text-sm font-medium text-slate-200"
+                  >
+                    {signal}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
-          <div className="surface-card relative overflow-hidden">
-            <div className="absolute inset-x-0 top-0 h-28 bg-[radial-gradient(circle_at_top,_rgba(95,148,116,0.18),_transparent_70%)]" />
-            <div className="relative space-y-6">
+          <div className="grid gap-6">
+            <div className="surface-card p-6 md:p-7">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
-                    Demo snapshot
-                  </p>
-                  <h2 className="mt-2 text-2xl font-semibold text-slate-950">
-                    Review desk overview
+                  <p className="eyebrow">Live snapshot</p>
+                  <h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-slate-950">
+                    Review desk
                   </h2>
                 </div>
-                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.22em] text-emerald-900">
-                  Live-ready
+                <span className="rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-teal-800">
+                  Deployed UX
                 </span>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="rounded-3xl border border-slate-200/80 bg-white/85 p-5 shadow-[0_12px_24px_-22px_rgba(15,23,32,0.45)]">
-                  <p className="text-sm text-slate-500">Open cases</p>
-                  <p className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-slate-950">
-                    24
-                  </p>
-                  <p className="mt-2 text-sm text-emerald-700">+5 due this week</p>
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                {outcomeCards.map((card) => (
+                  <article
+                    key={card.label}
+                    className="surface-panel p-5 first:sm:col-span-2"
+                  >
+                    <p className="eyebrow">{card.label}</p>
+                    <p className="mt-3 text-4xl font-semibold tracking-[-0.06em] text-slate-950">
+                      {card.value}
+                    </p>
+                    <p className="mt-3 text-sm leading-7 text-slate-600">{card.description}</p>
+                  </article>
+                ))}
+              </div>
+            </div>
+
+            <div className="surface-card p-6 md:p-7">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="eyebrow">Assistant thread</p>
+                  <h2 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-slate-950">
+                    Grounded case guidance
+                  </h2>
                 </div>
-                <div className="rounded-3xl border border-slate-200/80 bg-white/85 p-5 shadow-[0_12px_24px_-22px_rgba(15,23,32,0.45)]">
-                  <p className="text-sm text-slate-500">Review alerts</p>
-                  <p className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-slate-950">
-                    7
-                  </p>
-                  <p className="mt-2 text-sm text-amber-700">2 waiting for operator action</p>
-                </div>
+                <span className="rounded-full bg-orange-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-orange-900">
+                  Review mode
+                </span>
               </div>
 
-              <div className="rounded-[2rem] border border-slate-200/80 bg-slate-950 p-5 text-slate-50 shadow-[0_22px_50px_-28px_rgba(15,23,32,0.8)]">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-slate-200">Ask Caseflow AI</p>
-                  <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-slate-300">
-                    Grounded mode
-                  </span>
-                </div>
-                <p className="mt-4 text-sm leading-7 text-slate-300">
-                  Summarize the missing documents and cite the latest evidence for claim
-                  <span className="font-semibold text-white"> CLM-2026-1049</span>.
+              <div className="mt-5 rounded-[1.8rem] bg-[linear-gradient(180deg,#111b28,#0a121d)] p-5 text-slate-50 shadow-[0_28px_60px_-36px_rgba(16,24,37,0.9)]">
+                <p className="text-sm font-medium text-slate-300">
+                  What is still missing before this case can be approved?
                 </p>
-                <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm leading-7 text-slate-200">
-                  Latest version notes point to an unsigned repair estimate and a missing
-                  claimant statement. Document versions `invoice_march.pdf` and
-                  `statement-v2.txt` are the strongest references for the next action.
+                <div className="mt-4 rounded-[1.4rem] border border-white/8 bg-white/5 p-4">
+                  <p className="text-sm leading-7 text-slate-200">
+                    The latest evidence suggests two blocking gaps: the claimant statement is still
+                    unsigned and the repair estimate does not include insurer approval metadata.
+                    The strongest references are <span className="font-semibold text-white">statement-v2.txt</span> and{" "}
+                    <span className="font-semibold text-white">repair-estimate-march.pdf</span>.
+                  </p>
                 </div>
               </div>
             </div>
@@ -146,14 +175,12 @@ export default function Home() {
 
         <section className="grid gap-5 lg:grid-cols-3">
           {featureCards.map((feature) => (
-            <article key={feature.title} className="surface-card">
-              <p className="text-xs font-semibold uppercase tracking-[0.26em] text-slate-500">
-                {feature.eyebrow}
-              </p>
-              <h2 className="mt-4 text-2xl font-semibold tracking-[-0.03em] text-slate-950">
+            <article key={feature.title} className="surface-card p-6 md:p-7">
+              <p className="eyebrow">{feature.eyebrow}</p>
+              <h2 className="mt-4 text-3xl font-semibold tracking-[-0.05em] text-slate-950">
                 {feature.title}
               </h2>
-              <p className="mt-3 text-base leading-7 text-slate-600">{feature.description}</p>
+              <p className="mt-4 text-base leading-8 text-slate-600">{feature.description}</p>
             </article>
           ))}
         </section>
