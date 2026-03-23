@@ -33,7 +33,7 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - organization operations summary, failure inspection and scoped retry-due maintenance endpoints
 - retention preview/run endpoints for old delivered webhooks and sent outbound emails
 - platform admin overview, anomaly detection, risk reporting, tenant activity feed and bulk lifecycle controls
-- platform admin review queue with assignees, comments, due dates, tenant risk snapshots, auto-open flows, overdue escalation tooling and operator notifications
+- platform admin review queue with assignees, comments, due dates, tenant risk snapshots, auto-open flows, overdue escalation tooling, operator notifications and manual digest delivery
 - demo data seeding script for a ready-to-show local environment
 - Alembic migrations and integration tests
 
@@ -68,9 +68,11 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - `POST /api/v1/admin/reviews/escalate-overdue`
 - `GET /api/v1/admin/notifications`
 - `GET /api/v1/admin/notifications/summary`
+- `GET /api/v1/admin/notifications/digest-preview`
 - `GET /api/v1/admin/notifications/preferences`
 - `PATCH /api/v1/admin/notifications/preferences`
 - `POST /api/v1/admin/notifications/{notification_id}/read`
+- `POST /api/v1/admin/notifications/send-digest`
 - `POST /api/v1/admin/notifications/read-all`
 - `GET /api/v1/admin/reviews`
 - `POST /api/v1/admin/organizations/{organization_id}/reviews`
@@ -241,6 +243,8 @@ Integration tests cover:
 - Platform admin notifications persist separately from tenant audit logs and can fan out through the
   existing email outbox, so operators get both an in-app feed and optional email alerts without
   inventing a second delivery pipeline.
+- Notification digests reuse the same persisted admin notification feed and email outbox, so preview
+  and send paths do not introduce a second aggregation store or a separate mail delivery mechanism.
 - Superuser access is managed explicitly through a dedicated service and script instead of being
   hardcoded into registration or environment-only bootstrap logic.
 - Retention cleanup is explicit and previewable, so old operational records can be pruned without
@@ -255,4 +259,4 @@ Integration tests cover:
 ## Next High-Value Steps
 
 - internal admin UI for platform operators on top of the review queue APIs
-- digest batching or scheduled summaries for noisy admin notification streams
+- scheduled admin notification digests on top of the existing preview/send flow
