@@ -67,6 +67,14 @@ export default function RegisterPage() {
       alternateHref="/auth/login"
     >
       <form className="grid gap-5 md:grid-cols-2" onSubmit={handleSubmit}>
+        <div className="surface-panel p-4 md:col-span-2">
+          <p className="eyebrow">What happens next</p>
+          <p className="mt-3 text-sm leading-7 text-slate-700">
+            Creating the organization issues the first owner session immediately, so you land
+            straight in the operations workspace without any separate activation flow.
+          </p>
+        </div>
+
         <div className="field-shell md:col-span-2">
           <label className="field-label" htmlFor="organizationName">
             Organization name
@@ -154,7 +162,7 @@ export default function RegisterPage() {
 
         <div className="md:col-span-2">
           <Button disabled={isSubmitting} fullWidth type="submit">
-            {isSubmitting ? "Creating workspace…" : "Create workspace"}
+            {isSubmitting ? "Creating workspace…" : "Create and enter workspace"}
           </Button>
         </div>
       </form>

@@ -45,6 +45,15 @@ export default function LoginPage() {
       alternateHref="/auth/register"
     >
       <form className="space-y-5" onSubmit={handleSubmit}>
+        <div className="surface-panel p-4">
+          <p className="eyebrow">Demo access</p>
+          <p className="mt-3 text-sm leading-7 text-slate-700">
+            Use <span className="font-semibold text-slate-950">demo.owner@caseflow.local</span> with{" "}
+            <span className="font-semibold text-slate-950">OwnerPass123</span> and optional slug{" "}
+            <span className="font-semibold text-slate-950">demo-claims</span>.
+          </p>
+        </div>
+
         <div className="field-shell">
           <label className="field-label" htmlFor="email">
             Email
@@ -91,7 +100,7 @@ export default function LoginPage() {
         {errorMessage ? <p className="field-error">{errorMessage}</p> : null}
 
         <Button disabled={isSubmitting} fullWidth type="submit">
-          {isSubmitting ? "Signing in…" : "Sign in"}
+          {isSubmitting ? "Signing in…" : "Enter workspace"}
         </Button>
       </form>
     </AuthFormShell>
