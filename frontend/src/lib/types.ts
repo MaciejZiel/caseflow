@@ -1,0 +1,85 @@
+export type User = {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  is_active: boolean;
+  created_at: string;
+};
+
+export type Organization = {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+  created_at: string;
+};
+
+export type Membership = {
+  id: string;
+  role: string;
+  is_active: boolean;
+  joined_at: string;
+};
+
+export type SessionPayload = {
+  user: User;
+  organization: Organization;
+  membership: Membership;
+};
+
+export type AuthResponse = SessionPayload & {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  expires_in: number;
+  refresh_token_expires_in: number;
+};
+
+export type CaseSummaryReport = {
+  total_cases: number;
+  active_cases: number;
+  archived_cases: number;
+  overdue_cases: number;
+  due_next_7_days: number;
+  status_counts: Record<string, number>;
+  priority_counts: Record<string, number>;
+};
+
+export type CaseRecord = {
+  id: string;
+  external_id: string | null;
+  title: string;
+  description: string | null;
+  status: string;
+  priority: string;
+  owner_user_id: string | null;
+  created_by: string;
+  due_date: string | null;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CaseComment = {
+  id: string;
+  case_id: string;
+  author_user_id: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ApiErrorPayload = {
+  error?: {
+    code?: string;
+    message?: string;
+    request_id?: string;
+  };
+};
+
+export type AuthStorageState = {
+  accessToken: string;
+  refreshToken: string;
+  session: SessionPayload;
+};
