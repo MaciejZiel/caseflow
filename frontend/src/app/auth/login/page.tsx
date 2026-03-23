@@ -17,6 +17,13 @@ export default function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  function fillDemoCredentials() {
+    setEmail("demo.owner@caseflow.local");
+    setPassword("OwnerPass123");
+    setOrganizationSlug("demo-claims");
+    setErrorMessage(null);
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
@@ -52,6 +59,11 @@ export default function LoginPage() {
             <span className="font-semibold text-slate-950">OwnerPass123</span> and optional slug{" "}
             <span className="font-semibold text-slate-950">demo-claims</span>.
           </p>
+          <div className="mt-4">
+            <Button onClick={fillDemoCredentials} type="button" variant="secondary">
+              Fill demo credentials
+            </Button>
+          </div>
         </div>
 
         <div className="field-shell">
