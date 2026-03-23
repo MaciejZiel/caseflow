@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps.auth import SuperuserActor, get_current_superuser_actor
 from app.api.v1.schemas.admin_notifications import (
+    AdminNotificationDigestPreviewResponse,
+    AdminNotificationDigestSendResponse,
     AdminNotificationMarkAllReadResponse,
     AdminNotificationPreferenceResponse,
     AdminNotificationPreferenceUpdateRequest,
@@ -21,6 +23,8 @@ from app.api.v1.schemas.admin_reviews import (
     AdminReviewUserResponse,
 )
 from app.application.services.admin_notifications import (
+    AdminNotificationDigestPreview,
+    AdminNotificationDigestSendResult,
     AdminNotificationItem,
     AdminNotificationPreferenceSnapshot,
     AdminNotificationService,
@@ -60,6 +64,36 @@ async def get_notification_summary(
 ) -> AdminNotificationSummaryResponse:
     summary = AdminNotificationService(session).get_summary(actor=actor)
     return _to_notification_summary_response(summary)
+
+
+@router.get("/digest-preview", response_model=AdminNotificationDigestPreviewResponse)
+async def preview_notification_digest(
+    actor: SuperuserActorDep,
+    session: SessionDep,
+    unread_only: bool = True,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> AdminNotificationDigestPreviewResponse:
+    preview = AdminNotificationService(session).preview_digest(
+        actor=actor,
+        unread_only=unread_only,
+        limit=limit,
+    )
+    return _to_notification_digest_preview_response(preview)
+
+
+@router.post("/send-digest", response_model=AdminNotificationDigestSendResponse)
+async def send_notification_digest(
+    actor: SuperuserActorDep,
+    session: SessionDep,
+    unread_only: bool = True,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> AdminNotificationDigestSendResponse:
+    result = AdminNotificationService(session).send_digest(
+        actor=actor,
+        unread_only=unread_only,
+        limit=limit,
+    )
+    return _to_notification_digest_send_response(result)
 
 
 @router.get("/preferences", response_model=AdminNotificationPreferenceResponse)
@@ -135,6 +169,28 @@ def _to_notification_summary_response(
     return AdminNotificationSummaryResponse(
         unread_count=summary.unread_count,
         counts_by_type=summary.counts_by_type,
+    )
+
+
+def _to_notification_digest_preview_response(
+    preview: AdminNotificationDigestPreview,
+) -> AdminNotificationDigestPreviewResponse:
+    return AdminNotificationDigestPreviewResponse(
+        total_count=preview.total_count,
+        unread_only=preview.unread_only,
+        counts_by_type=preview.counts_by_type,
+        notifications=[_to_notification_response(item) for item in preview.notifications],
+    )
+
+
+def _to_notification_digest_send_response(
+    result: AdminNotificationDigestSendResult,
+) -> AdminNotificationDigestSendResponse:
+    return AdminNotificationDigestSendResponse(
+        sent=result.sent,
+        recipient_email=result.recipient_email,
+        total_count=result.total_count,
+        template_key=result.template_key,
     )
 
 

@@ -46,6 +46,22 @@ class AdminNotificationSummary:
 
 
 @dataclass(slots=True)
+class AdminNotificationDigestPreview:
+    total_count: int
+    unread_only: bool
+    counts_by_type: dict[str, int]
+    notifications: list[AdminNotificationItem]
+
+
+@dataclass(slots=True)
+class AdminNotificationDigestSendResult:
+    sent: bool
+    recipient_email: str
+    total_count: int
+    template_key: str | None
+
+
+@dataclass(slots=True)
 class AdminNotificationPreferenceSnapshot:
     user: AdminReviewUserRef
     email_enabled: bool
@@ -103,6 +119,83 @@ class AdminNotificationService:
         return AdminNotificationSummary(
             unread_count=unread_count,
             counts_by_type=counts_by_type,
+        )
+
+    def preview_digest(
+        self,
+        *,
+        actor: ActorContext,
+        unread_only: bool,
+        limit: int,
+    ) -> AdminNotificationDigestPreview:
+        self._ensure_superuser(actor)
+        notifications = self.list_notifications(
+            actor=actor,
+            unread_only=unread_only,
+            notification_type=None,
+            limit=limit,
+            offset=0,
+        )
+        counts_by_type = {notification_type.value: 0 for notification_type in AdminNotificationType}
+        for notification in notifications:
+            counts_by_type[notification.notification_type.value] += 1
+        return AdminNotificationDigestPreview(
+            total_count=len(notifications),
+            unread_only=unread_only,
+            counts_by_type=counts_by_type,
+            notifications=notifications,
+        )
+
+    def send_digest(
+        self,
+        *,
+        actor: ActorContext,
+        unread_only: bool,
+        limit: int,
+    ) -> AdminNotificationDigestSendResult:
+        self._ensure_superuser(actor)
+        preview = self.preview_digest(
+            actor=actor,
+            unread_only=unread_only,
+            limit=limit,
+        )
+        if preview.total_count == 0:
+            return AdminNotificationDigestSendResult(
+                sent=False,
+                recipient_email=actor.user.email,
+                total_count=0,
+                template_key=None,
+            )
+
+        lines = [
+            f"- {notification.created_at.isoformat()} [{notification.notification_type.value}] "
+            f"{notification.title}"
+            for notification in preview.notifications
+        ]
+        email = self.email_outbox.enqueue_platform_admin_notification_email(
+            organization_id=actor.organization.id,
+            recipient_email=actor.user.email,
+            template_key="platform_admin_notification_digest",
+            subject="CaseFlow platform admin notification digest",
+            body_text=(
+                "Platform admin notification digest\n\n"
+                f"Unread only: {'yes' if unread_only else 'no'}\n"
+                f"Included notifications: {preview.total_count}\n\n"
+                + "\n".join(lines)
+            ),
+            payload_json={
+                "unread_only": unread_only,
+                "total_count": preview.total_count,
+                "counts_by_type": preview.counts_by_type,
+            },
+        )
+        self.session.commit()
+        self.email_outbox.dispatch_enqueued_emails([email.id])
+        return AdminNotificationDigestSendResult(
+            sent=True,
+            recipient_email=actor.user.email,
+            total_count=preview.total_count,
+            template_key="platform_admin_notification_digest",
         )
 
     def get_preferences(self, *, actor: ActorContext) -> AdminNotificationPreferenceSnapshot:

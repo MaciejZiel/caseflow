@@ -31,6 +31,20 @@ class AdminNotificationSummaryResponse(BaseModel):
     counts_by_type: dict[str, int]
 
 
+class AdminNotificationDigestPreviewResponse(BaseModel):
+    total_count: int
+    unread_only: bool
+    counts_by_type: dict[str, int]
+    notifications: list[AdminNotificationResponse]
+
+
+class AdminNotificationDigestSendResponse(BaseModel):
+    sent: bool
+    recipient_email: str
+    total_count: int
+    template_key: str | None
+
+
 class AdminNotificationMarkAllReadResponse(BaseModel):
     updated_count: int
 

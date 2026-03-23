@@ -331,3 +331,125 @@ async def test_overdue_escalation_notifications_can_be_marked_read(
         )
         assert mark_all.status_code == 200
         assert mark_all.json()["updated_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_notification_digest_preview_and_send_use_existing_feed(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def failing_urlopen(req: Any, timeout: int = 0) -> _FakeWebhookResponse:
+        raise error.URLError("connection refused")
+
+    def selective_email_deliver(self, email: OutboundEmail) -> str:
+        if email.template_key == "organization_invitation":
+            raise RuntimeError("smtp offline for invitation")
+        email_dir = (tmp_path / "emails").resolve()
+        email_dir.mkdir(parents=True, exist_ok=True)
+        path = email_dir / f"{email.id}.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "template_key": email.template_key,
+                    "recipient_email": email.recipient_email,
+                    "subject": email.subject,
+                    "body_text": email.body_text,
+                    "payload": email.payload_json,
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        return str(path)
+
+    async with configured_async_client(
+        tmp_path,
+        monkeypatch,
+        env_overrides={"ADMIN_FAILURE_ANOMALY_THRESHOLD": "1"},
+    ) as async_client:
+        monkeypatch.setattr(webhook_module.request, "urlopen", failing_urlopen)
+        monkeypatch.setattr(
+            "app.infrastructure.email.local.LocalEmailSink.deliver",
+            selective_email_deliver,
+        )
+
+        admin = await register_owner(
+            async_client,
+            organization_name="Platform Admins",
+            organization_slug="platform-admins",
+            email="root@example.com",
+        )
+        promote_user_to_superuser(email=admin["email"])
+
+        await _create_risky_tenant(
+            async_client,
+            organization_name="Digest Target",
+            organization_slug="digest-target",
+            email="owner@digest-target.example.com",
+        )
+
+        auto_open = await async_client.post(
+            "/api/v1/admin/reviews/auto-open",
+            headers={"Authorization": f"Bearer {admin['access_token']}"},
+            json={"min_risk_score": 50, "limit": 10},
+        )
+        assert auto_open.status_code == 200
+
+        preview = await async_client.get(
+            "/api/v1/admin/notifications/digest-preview",
+            headers={"Authorization": f"Bearer {admin['access_token']}"},
+            params={"unread_only": "true", "limit": 10},
+        )
+        assert preview.status_code == 200
+        preview_body = preview.json()
+        assert preview_body["total_count"] == 1
+        assert preview_body["unread_only"] is True
+        assert preview_body["counts_by_type"]["review_auto_opened"] == 1
+        assert len(preview_body["notifications"]) == 1
+
+        sent = await async_client.post(
+            "/api/v1/admin/notifications/send-digest",
+            headers={"Authorization": f"Bearer {admin['access_token']}"},
+            params={"unread_only": "true", "limit": 10},
+        )
+        assert sent.status_code == 200
+        sent_body = sent.json()
+        assert sent_body["sent"] is True
+        assert sent_body["recipient_email"] == admin["email"]
+        assert sent_body["template_key"] == "platform_admin_notification_digest"
+
+        email_payloads = _read_email_sink_files(tmp_path / "emails")
+        digest_emails = [
+            payload
+            for payload in email_payloads
+            if payload["template_key"] == "platform_admin_notification_digest"
+        ]
+        assert len(digest_emails) == 1
+        assert "notification digest" in digest_emails[0]["subject"].lower()
+
+
+@pytest.mark.asyncio
+async def test_notification_digest_send_returns_not_sent_when_feed_is_empty(
+    async_client: httpx.AsyncClient,
+) -> None:
+    admin = await register_owner(
+        async_client,
+        organization_name="Platform Admins",
+        organization_slug="platform-admins",
+        email="root@example.com",
+    )
+    promote_user_to_superuser(email=admin["email"])
+
+    sent = await async_client.post(
+        "/api/v1/admin/notifications/send-digest",
+        headers={"Authorization": f"Bearer {admin['access_token']}"},
+        params={"unread_only": "true", "limit": 10},
+    )
+    assert sent.status_code == 200
+    assert sent.json() == {
+        "sent": False,
+        "recipient_email": admin["email"],
+        "total_count": 0,
+        "template_key": None,
+    }
