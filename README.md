@@ -33,7 +33,7 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - organization operations summary, failure inspection and scoped retry-due maintenance endpoints
 - retention preview/run endpoints for old delivered webhooks and sent outbound emails
 - platform admin overview, anomaly detection, risk reporting, tenant activity feed and bulk lifecycle controls
-- platform admin review queue with assignees, comments, due dates, tenant risk snapshots, auto-open flows, overdue escalation tooling, operator notifications, manual digest delivery and scheduled digest preferences
+- platform admin review queue with assignees, comments, due dates, tenant risk snapshots, auto-open flows, overdue escalation tooling, workload insights, attention queue, operator notifications, manual digest delivery and scheduled digest preferences
 - demo data seeding script for a ready-to-show local environment
 - Alembic migrations and integration tests
 
@@ -62,6 +62,8 @@ It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with exp
 - `GET /api/v1/admin/risk-report`
 - `GET /api/v1/admin/exports/organizations.csv`
 - `GET /api/v1/admin/reviews/summary`
+- `GET /api/v1/admin/reviews/workload`
+- `GET /api/v1/admin/reviews/attention-queue`
 - `GET /api/v1/admin/reviews/auto-open-preview`
 - `POST /api/v1/admin/reviews/auto-open`
 - `GET /api/v1/admin/reviews/escalation-preview`
@@ -200,7 +202,7 @@ Integration tests cover:
 - API key management and tenant-scoped integration access
 - case reporting, search and CSV export
 - operational summary, failures and maintenance retry endpoints
-- platform admin overview, anomaly detection, risk reporting, review queue, review auto-open flows, overdue escalation tooling, operator notifications, activity feed and bulk lifecycle controls
+- platform admin overview, anomaly detection, risk reporting, review queue, workload insights, attention queue, review auto-open flows, overdue escalation tooling, operator notifications, activity feed and bulk lifecycle controls
 - retention preview and cleanup controls
 - email outbox and local sink delivery
 - demo data seeding
@@ -241,6 +243,9 @@ Integration tests cover:
 - Overdue escalation preview and execution reuse the same review state model, so SLA-driven urgency
   changes, reassignment and escalation comments stay on the normal review timeline instead of a
   separate ops-only path.
+- Review workload and attention queue endpoints derive directly from the persisted review state, so
+  assignee load, overdue pressure and unassigned follow-ups stay visible without a separate cache or
+  reporting pipeline.
 - Platform admin notifications persist separately from tenant audit logs and can fan out through the
   existing email outbox, so operators get both an in-app feed and optional email alerts without
   inventing a second delivery pipeline.
