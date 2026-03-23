@@ -150,9 +150,7 @@ export function CaseDetailWorkbench({ caseId }: CaseDetailWorkbenchProps) {
   if (loadState === "error") {
     return (
       <section className="surface-card border-rose-200 bg-rose-50/75">
-        <p className="text-xs font-semibold uppercase tracking-[0.26em] text-rose-700">
-          Case detail error
-        </p>
+        <p className="eyebrow text-rose-700">Case detail error</p>
         <p className="mt-3 text-base text-rose-900">{errorMessage}</p>
       </section>
     );
@@ -161,114 +159,111 @@ export function CaseDetailWorkbench({ caseId }: CaseDetailWorkbenchProps) {
   if (loadState === "loading" || !caseRecord) {
     return (
       <section className="surface-card">
-        <p className="text-xs font-semibold uppercase tracking-[0.26em] text-slate-500">
-          Case detail
+        <p className="eyebrow">Case detail</p>
+        <p className="mt-4 text-base text-slate-600">
+          Loading case, documents and operator notes…
         </p>
-        <p className="mt-4 text-base text-slate-600">Loading case, documents and operator notes…</p>
       </section>
     );
   }
 
   return (
     <div className="space-y-6">
-      <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <div className="surface-card">
-          <div className="flex flex-wrap items-center gap-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
-              Case detail
+      <section className="grid gap-6 2xl:grid-cols-[1.05fr_0.95fr]">
+        <div className="surface-panel-dark relative overflow-hidden p-6 text-slate-50 md:p-8">
+          <div className="absolute right-[-5rem] top-[-3rem] h-48 w-48 rounded-full bg-orange-500/16 blur-3xl" />
+          <div className="absolute bottom-[-5rem] left-[-2rem] h-44 w-44 rounded-full bg-teal-400/10 blur-3xl" />
+          <div className="relative">
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
+                Case workbench
+              </p>
+              <Badge value={caseRecord.status} tone={statusTone[caseRecord.status] ?? "neutral"} />
+              <Badge value={caseRecord.priority} />
+            </div>
+
+            <h1 className="mt-5 text-4xl font-semibold tracking-[-0.06em] text-white md:text-5xl">
+              {caseRecord.title}
+            </h1>
+            <p className="mt-5 max-w-3xl text-base leading-8 text-slate-300">
+              {caseRecord.description || "No description has been added to this case yet."}
             </p>
-            <Badge value={caseRecord.status} tone={statusTone[caseRecord.status] ?? "neutral"} />
-            <Badge value={caseRecord.priority} />
-          </div>
 
-          <h1 className="mt-4 text-4xl font-semibold tracking-[-0.05em] text-slate-950">
-            {caseRecord.title}
-          </h1>
-          <p className="mt-4 max-w-3xl text-base leading-7 text-slate-600">
-            {caseRecord.description || "No description has been added to this case yet."}
-          </p>
-
-          <div className="mt-6 grid gap-4 sm:grid-cols-3">
-            <InfoTile
-              label="External reference"
-              value={caseRecord.external_id || "No external id"}
-              helper="Useful for cross-system lookup"
-            />
-            <InfoTile
-              label="Due date"
-              value={formatDate(caseRecord.due_date)}
-              helper="Visible operator deadline"
-            />
-            <InfoTile
-              label="Last updated"
-              value={formatDateTime(caseRecord.updated_at)}
-              helper="Latest backend activity"
-            />
+            <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <WorkbenchMetric
+                label="External reference"
+                value={caseRecord.external_id || "No external id"}
+              />
+              <WorkbenchMetric label="Due date" value={formatDate(caseRecord.due_date)} />
+              <WorkbenchMetric
+                label="Documents"
+                value={`${documents.length} attached`}
+              />
+              <WorkbenchMetric
+                label="Last updated"
+                value={formatDateTime(caseRecord.updated_at)}
+              />
+            </div>
           </div>
         </div>
 
-        <div className="surface-card">
-          <CaseAssistantPanel caseId={caseId} />
-        </div>
+        <CaseAssistantPanel caseId={caseId} />
       </section>
 
       {errorMessage ? (
         <section className="surface-card border-amber-200 bg-amber-50/80">
-          <p className="text-xs font-semibold uppercase tracking-[0.26em] text-amber-700">
-            Workspace notice
-          </p>
+          <p className="eyebrow text-amber-700">Workspace notice</p>
           <p className="mt-3 text-base text-amber-900">{errorMessage}</p>
         </section>
       ) : null}
 
-      <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+      <section className="grid gap-6 2xl:grid-cols-[1.08fr_0.92fr]">
         <div className="space-y-6">
-          <div className="surface-card">
-            <div className="flex items-center justify-between gap-4">
+          <div className="surface-card p-6 md:p-7">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
-                  Documents
-                </p>
-                <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">
-                  Uploaded evidence
+                <p className="eyebrow">Evidence</p>
+                <h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-slate-950">
+                  Documents attached to this case
                 </h2>
               </div>
-              <span className="rounded-full bg-slate-200/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700">
+              <span className="rounded-full border border-slate-200 bg-white/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-700">
                 {documents.length} total
               </span>
             </div>
 
-            <div className="mt-5 grid gap-4">
+            <div className="mt-6 grid gap-4">
               {documents.length === 0 ? (
-                <div className="rounded-[1.6rem] border border-dashed border-slate-300 bg-white/55 px-5 py-8 text-sm text-slate-500">
-                  No documents yet. Use the upload form to attach the first document to this case.
-                </div>
+                <EmptyStateCard message="No documents yet. Use the upload form to attach the first document to this case." />
               ) : (
                 documents.map((document) => (
-                  <article
-                    key={document.id}
-                    className="rounded-[1.6rem] border border-slate-200/80 bg-white/70 p-5"
-                  >
-                    <div className="flex flex-wrap items-center gap-3">
-                      <p className="text-lg font-semibold text-slate-900">{document.title}</p>
-                      <Badge
-                        value={document.status}
-                        tone={statusTone[document.status] ?? "neutral"}
-                      />
+                  <article key={document.id} className="surface-panel p-5">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <p className="text-xl font-semibold tracking-[-0.03em] text-slate-950">
+                            {document.title}
+                          </p>
+                          <Badge
+                            value={document.status}
+                            tone={statusTone[document.status] ?? "neutral"}
+                          />
+                        </div>
+                        <p className="mt-3 text-sm leading-7 text-slate-600">
+                          {document.mime_type
+                            ? `${document.mime_type} document ready for review`
+                            : "Document ready for review"}
+                        </p>
+                      </div>
+                      <div className="rounded-[1.1rem] bg-slate-100/80 px-3 py-2 text-sm font-medium text-slate-700">
+                        {formatEnumLabel(document.document_type)}
+                      </div>
                     </div>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                      <MiniField
-                        label="Type"
-                        value={formatEnumLabel(document.document_type)}
-                      />
-                      <MiniField
-                        label="MIME type"
-                        value={document.mime_type ?? "Unknown"}
-                      />
-                      <MiniField
-                        label="Uploaded"
-                        value={formatDateTime(document.created_at)}
-                      />
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-3">
+                      <MiniField label="Type" value={formatEnumLabel(document.document_type)} />
+                      <MiniField label="MIME type" value={document.mime_type ?? "Unknown"} />
+                      <MiniField label="Uploaded" value={formatDateTime(document.created_at)} />
                     </div>
                   </article>
                 ))
@@ -276,11 +271,20 @@ export function CaseDetailWorkbench({ caseId }: CaseDetailWorkbenchProps) {
             </div>
           </div>
 
-          <div className="surface-card">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
-              Upload document
-            </p>
-            <form className="mt-5 grid gap-4 md:grid-cols-2" onSubmit={handleUploadSubmit}>
+          <div className="surface-card p-6 md:p-7">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="eyebrow">Upload</p>
+                <h2 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-slate-950">
+                  Add new evidence
+                </h2>
+              </div>
+              <span className="rounded-full bg-orange-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-orange-900">
+                PDF or text
+              </span>
+            </div>
+
+            <form className="mt-6 grid gap-4 md:grid-cols-2" onSubmit={handleUploadSubmit}>
               <div className="field-shell md:col-span-2">
                 <label className="field-label" htmlFor="document-title">
                   Title
@@ -338,11 +342,13 @@ export function CaseDetailWorkbench({ caseId }: CaseDetailWorkbenchProps) {
         </div>
 
         <div className="space-y-6">
-          <div className="surface-card">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
-              Comments
-            </p>
-            <form className="mt-5 space-y-4" onSubmit={handleCommentSubmit}>
+          <div className="surface-card p-6 md:p-7">
+            <p className="eyebrow">Operator notes</p>
+            <h2 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-slate-950">
+              Comments and handoff context
+            </h2>
+
+            <form className="mt-6 space-y-4" onSubmit={handleCommentSubmit}>
               <div className="field-shell">
                 <label className="field-label" htmlFor="comment-body">
                   Add operator note
@@ -360,19 +366,14 @@ export function CaseDetailWorkbench({ caseId }: CaseDetailWorkbenchProps) {
               </Button>
             </form>
 
-            <div className="mt-5 space-y-3">
+            <div className="mt-6 space-y-3">
               {comments.length === 0 ? (
-                <div className="rounded-[1.5rem] border border-dashed border-slate-300 bg-white/55 px-4 py-6 text-sm text-slate-500">
-                  No comments on this case yet.
-                </div>
+                <EmptyStateCard message="No comments on this case yet." />
               ) : (
                 comments.map((comment) => (
-                  <article
-                    key={comment.id}
-                    className="rounded-[1.5rem] border border-slate-200/80 bg-white/70 px-4 py-4"
-                  >
+                  <article key={comment.id} className="surface-panel px-4 py-4">
                     <p className="text-sm leading-7 text-slate-800">{comment.body}</p>
-                    <p className="mt-2 text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
+                    <p className="mt-3 text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
                       {formatDateTime(comment.created_at)}
                     </p>
                   </article>
@@ -381,21 +382,18 @@ export function CaseDetailWorkbench({ caseId }: CaseDetailWorkbenchProps) {
             </div>
           </div>
 
-          <div className="surface-card">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
-              Audit trail
-            </p>
-            <div className="mt-5 space-y-3">
+          <div className="surface-card p-6 md:p-7">
+            <p className="eyebrow">Audit trail</p>
+            <h2 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-slate-950">
+              Recent case activity
+            </h2>
+
+            <div className="mt-6 space-y-3">
               {timeline.length === 0 ? (
-                <div className="rounded-[1.5rem] border border-dashed border-slate-300 bg-white/55 px-4 py-6 text-sm text-slate-500">
-                  Audit entries will appear as case activity grows.
-                </div>
+                <EmptyStateCard message="Audit entries will appear as case activity grows." />
               ) : (
                 timeline.map((entry) => (
-                  <article
-                    key={entry.id}
-                    className="rounded-[1.5rem] border border-slate-200/80 bg-white/70 px-4 py-4"
-                  >
+                  <article key={entry.id} className="surface-panel px-4 py-4">
                     <div className="flex items-center justify-between gap-4">
                       <p className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-700">
                         {entry.event_type.replaceAll(".", " ")}
@@ -404,7 +402,7 @@ export function CaseDetailWorkbench({ caseId }: CaseDetailWorkbenchProps) {
                         {formatDateTime(entry.created_at)}
                       </p>
                     </div>
-                    <p className="mt-2 text-sm leading-7 text-slate-600">{entry.summary}</p>
+                    <p className="mt-3 text-sm leading-7 text-slate-600">{entry.summary}</p>
                   </article>
                 ))
               )}
@@ -416,27 +414,28 @@ export function CaseDetailWorkbench({ caseId }: CaseDetailWorkbenchProps) {
   );
 }
 
-function InfoTile({
-  label,
-  value,
-  helper,
-}: {
-  label: string;
-  value: string;
-  helper: string;
-}) {
+function WorkbenchMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-[1.5rem] border border-slate-200/80 bg-white/70 p-4">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</p>
-      <p className="mt-3 text-lg font-semibold tracking-[-0.03em] text-slate-900">{value}</p>
-      <p className="mt-2 text-sm text-slate-600">{helper}</p>
+    <div className="rounded-[1.5rem] border border-white/10 bg-white/6 p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+        {label}
+      </p>
+      <p className="mt-3 text-lg font-semibold tracking-[-0.03em] text-white">{value}</p>
+    </div>
+  );
+}
+
+function EmptyStateCard({ message }: { message: string }) {
+  return (
+    <div className="rounded-[1.6rem] border border-dashed border-slate-300 bg-white/55 px-5 py-8 text-sm text-slate-500">
+      {message}
     </div>
   );
 }
 
 function MiniField({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-slate-100/75 px-4 py-3">
+    <div className="rounded-[1.2rem] bg-slate-100/85 px-4 py-3">
       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
         {label}
       </p>

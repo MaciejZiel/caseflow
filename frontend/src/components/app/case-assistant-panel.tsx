@@ -173,162 +173,176 @@ export function CaseAssistantPanel({ caseId }: CaseAssistantPanelProps) {
   }
 
   return (
-    <div className="surface-card">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">
-            Case assistant
-          </p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">
-            Grounded threads with citations
-          </h2>
+    <section className="surface-card p-6 md:p-7">
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="eyebrow">Case assistant</p>
+            <h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-slate-950">
+              Grounded threads with citations
+            </h2>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+              Ask for summaries, review guidance or next actions. Answers stay inside the case and
+              point back to the underlying evidence.
+            </p>
+          </div>
+          <Button onClick={() => void handleCreateThread()} variant="secondary">
+            New thread
+          </Button>
         </div>
-        <Button onClick={() => void handleCreateThread()} variant="secondary">
-          New thread
-        </Button>
-      </div>
 
-      <div className="mt-5 flex flex-wrap gap-2">
-        {assistantModes.map((mode) => (
-          <button
-            key={mode}
-            className={`button ${promptMode === mode ? "button-primary" : "button-secondary"} text-sm`}
-            onClick={() => setPromptMode(mode)}
-            type="button"
-          >
-            {formatEnumLabel(mode)}
-          </button>
-        ))}
-      </div>
-
-      <div className="mt-5 flex flex-wrap gap-2">
-        {conversations.length === 0 ? (
-          <div className="rounded-full bg-slate-100 px-4 py-2 text-sm text-slate-500">
-            No assistant threads yet.
+        <div className="surface-panel-dark p-5 text-slate-50">
+          <div className="flex flex-wrap gap-2">
+            {assistantModes.map((mode) => (
+              <button
+                key={mode}
+                className={`rounded-[1rem] border px-3 py-2 text-sm font-semibold transition-all ${
+                  promptMode === mode
+                    ? "border-orange-300/60 bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-[0_18px_36px_-24px_rgba(255,122,69,0.85)]"
+                    : "border-white/10 bg-white/6 text-slate-200 hover:border-white/18 hover:bg-white/8"
+                }`}
+                onClick={() => setPromptMode(mode)}
+                type="button"
+              >
+                {formatEnumLabel(mode)}
+              </button>
+            ))}
           </div>
-        ) : (
-          conversations.map((conversation) => (
-            <button
-              key={conversation.id}
-              className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                conversation.id === selectedConversationId
-                  ? "bg-slate-950 text-white"
-                  : "bg-slate-100 text-slate-700"
-              }`}
-              onClick={() => setSelectedConversationId(conversation.id)}
-              type="button"
-            >
-              {conversation.title}
-            </button>
-          ))
-        )}
-      </div>
 
-      {selectedConversation ? (
-        <div className="mt-4 rounded-[1.5rem] border border-slate-200/80 bg-white/70 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-            Active thread
-          </p>
-          <p className="mt-2 text-sm font-semibold text-slate-900">
-            {selectedConversation.title}
-          </p>
-          <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-500">
-            Updated {formatDateTime(selectedConversation.last_message_at)}
-          </p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            {conversations.length === 0 ? (
+              <div className="rounded-[1rem] border border-dashed border-white/14 bg-white/4 px-4 py-3 text-sm text-slate-400">
+                No assistant threads yet.
+              </div>
+            ) : (
+              conversations.map((conversation) => (
+                <button
+                  key={conversation.id}
+                  className={`rounded-[1rem] border px-4 py-3 text-left text-sm font-medium transition-all ${
+                    conversation.id === selectedConversationId
+                      ? "border-orange-300/60 bg-white text-slate-950"
+                      : "border-white/10 bg-white/6 text-slate-200 hover:border-white/18 hover:bg-white/8"
+                  }`}
+                  onClick={() => setSelectedConversationId(conversation.id)}
+                  type="button"
+                >
+                  <span className="block max-w-[20rem] truncate">{conversation.title}</span>
+                </button>
+              ))
+            )}
+          </div>
         </div>
-      ) : null}
 
-      {errorMessage ? <p className="field-error mt-4">{errorMessage}</p> : null}
+        {selectedConversation ? (
+          <div className="surface-panel px-4 py-4">
+            <p className="eyebrow">Active thread</p>
+            <p className="mt-2 text-base font-semibold text-slate-950">
+              {selectedConversation.title}
+            </p>
+            <p className="mt-2 text-xs uppercase tracking-[0.18em] text-slate-500">
+              Updated {formatDateTime(selectedConversation.last_message_at)}
+            </p>
+          </div>
+        ) : null}
 
-      <div className="mt-5 space-y-4">
-        {isLoading ? (
-          <div className="rounded-[1.6rem] border border-dashed border-slate-300 bg-white/55 px-4 py-6 text-sm text-slate-500">
-            Loading assistant threads…
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="rounded-[1.6rem] border border-dashed border-slate-300 bg-white/55 px-4 py-6 text-sm leading-7 text-slate-500">
-            Ask for a summary, review guidance or next actions. Answers are grounded in the case
-            documents and stored in thread history.
-          </div>
-        ) : (
-          messages.map((message) => (
-            <article
-              key={message.id}
-              className={`rounded-[1.6rem] border px-4 py-4 ${
-                message.role === "assistant"
-                  ? "border-slate-200/80 bg-white/75"
-                  : "border-amber-200/80 bg-amber-50/70"
-              }`}
-            >
-              <div className="flex flex-wrap items-center gap-3">
-                <Badge
-                  value={message.role}
-                  tone={message.role === "assistant" ? "success" : "warning"}
-                />
-                <span className="text-xs uppercase tracking-[0.18em] text-slate-500">
-                  {formatEnumLabel(message.prompt_mode)}
-                </span>
-                <span className="text-xs uppercase tracking-[0.18em] text-slate-500">
-                  {formatDateTime(message.created_at)}
-                </span>
-              </div>
-              <div className="mt-3 whitespace-pre-line text-sm leading-7 text-slate-800">
-                {message.content}
-              </div>
-              {message.role === "assistant" && message.citations_json.length > 0 ? (
-                <div className="mt-4 space-y-3 rounded-[1.4rem] bg-slate-100/85 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Citations
-                  </p>
-                  {message.citations_json.map((citation) => (
-                    <div
-                      key={`${message.id}-${citation.document_id}-${citation.document_version_id ?? "latest"}`}
-                      className="rounded-2xl border border-slate-200/70 bg-white/80 px-4 py-3"
-                    >
-                      <div className="flex flex-wrap items-center gap-3">
-                        <p className="text-sm font-semibold text-slate-900">
-                          {citation.document_title}
-                        </p>
-                        <Badge
-                          value={citation.document_status}
-                          tone={
-                            citation.document_status === "approved" ||
-                            citation.document_status === "ready"
-                              ? "success"
-                              : citation.document_status === "failed" ||
-                                  citation.document_status === "rejected"
-                                ? "danger"
-                                : "warning"
-                          }
-                        />
-                      </div>
-                      <p className="mt-2 text-sm leading-7 text-slate-600">{citation.excerpt}</p>
-                    </div>
-                  ))}
+        {errorMessage ? <p className="field-error">{errorMessage}</p> : null}
+
+        <div className="space-y-4">
+          {isLoading ? (
+            <div className="rounded-[1.6rem] border border-dashed border-slate-300 bg-white/55 px-5 py-8 text-sm text-slate-500">
+              Loading assistant threads…
+            </div>
+          ) : messages.length === 0 ? (
+            <div className="rounded-[1.6rem] border border-dashed border-slate-300 bg-white/55 px-5 py-8 text-sm leading-7 text-slate-500">
+              Start a thread to generate a grounded case summary, review guidance or suggested next
+              actions.
+            </div>
+          ) : (
+            messages.map((message) => (
+              <article
+                key={message.id}
+                className={`rounded-[1.7rem] border p-5 ${
+                  message.role === "assistant"
+                    ? "border-slate-200 bg-white/80"
+                    : "border-orange-200 bg-orange-50/85"
+                }`}
+              >
+                <div className="flex flex-wrap items-center gap-3">
+                  <Badge
+                    value={message.role}
+                    tone={message.role === "assistant" ? "success" : "warning"}
+                  />
+                  <span className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                    {formatEnumLabel(message.prompt_mode)}
+                  </span>
+                  <span className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                    {formatDateTime(message.created_at)}
+                  </span>
                 </div>
-              ) : null}
-            </article>
-          ))
-        )}
-      </div>
-
-      <form className="mt-5 space-y-4" onSubmit={handleAsk}>
-        <div className="field-shell">
-          <label className="field-label" htmlFor="assistant-question">
-            Ask the assistant
-          </label>
-          <textarea
-            id="assistant-question"
-            value={question}
-            onChange={(event) => setQuestion(event.target.value)}
-            placeholder="What is missing before this case can move forward?"
-            required
-          />
+                <div className="mt-4 whitespace-pre-line text-sm leading-7 text-slate-800">
+                  {message.content}
+                </div>
+                {message.role === "assistant" && message.citations_json.length > 0 ? (
+                  <div className="mt-5 rounded-[1.4rem] bg-slate-950 p-4 text-slate-50">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                      Evidence used
+                    </p>
+                    <div className="mt-4 space-y-3">
+                      {message.citations_json.map((citation) => (
+                        <div
+                          key={`${message.id}-${citation.document_id}-${citation.document_version_id ?? "latest"}`}
+                          className="rounded-[1.2rem] border border-white/10 bg-white/6 px-4 py-4"
+                        >
+                          <div className="flex flex-wrap items-center gap-3">
+                            <p className="text-sm font-semibold text-white">
+                              {citation.document_title}
+                            </p>
+                            <Badge
+                              value={citation.document_status}
+                              tone={
+                                citation.document_status === "approved" ||
+                                citation.document_status === "ready"
+                                  ? "success"
+                                  : citation.document_status === "failed" ||
+                                      citation.document_status === "rejected"
+                                    ? "danger"
+                                    : "warning"
+                              }
+                            />
+                          </div>
+                          <p className="mt-3 text-sm leading-7 text-slate-300">
+                            {citation.excerpt}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </article>
+            ))
+          )}
         </div>
-        <Button disabled={isSending} fullWidth type="submit">
-          {isSending ? "Generating grounded answer…" : "Ask Caseflow AI"}
-        </Button>
-      </form>
-    </div>
+
+        <form className="surface-panel p-4" onSubmit={handleAsk}>
+          <div className="field-shell">
+            <label className="field-label" htmlFor="assistant-question">
+              Ask the assistant
+            </label>
+            <textarea
+              id="assistant-question"
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              placeholder="What is missing before this case can move forward?"
+              required
+            />
+          </div>
+          <div className="mt-4">
+            <Button disabled={isSending} fullWidth type="submit">
+              {isSending ? "Generating grounded answer…" : "Ask Caseflow AI"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </section>
   );
 }
