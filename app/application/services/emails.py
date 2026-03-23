@@ -93,6 +93,26 @@ class EmailOutboxService:
         )
         return self._create_outbound_email(payload)
 
+    def enqueue_platform_admin_notification_email(
+        self,
+        *,
+        organization_id: UUID | None,
+        recipient_email: str,
+        subject: str,
+        body_text: str,
+        payload_json: dict[str, object],
+        template_key: str,
+    ) -> OutboundEmail:
+        payload = OutboundEmailCreatePayload(
+            organization_id=organization_id,
+            template_key=template_key,
+            recipient_email=recipient_email,
+            subject=subject,
+            body_text=body_text,
+            payload_json=payload_json,
+        )
+        return self._create_outbound_email(payload)
+
     def dispatch_emails(self, email_ids: list[UUID]) -> None:
         if not email_ids:
             return

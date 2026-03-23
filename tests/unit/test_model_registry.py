@@ -5,6 +5,8 @@ from app.infrastructure.db.models import import_model_modules
 def test_core_identity_tables_are_registered() -> None:
     import_model_modules()
 
+    assert "admin_notifications" in Base.metadata.tables
+    assert "admin_notification_preferences" in Base.metadata.tables
     assert "admin_organization_reviews" in Base.metadata.tables
     assert "admin_organization_review_comments" in Base.metadata.tables
     assert "organizations" in Base.metadata.tables

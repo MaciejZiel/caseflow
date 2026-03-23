@@ -1,5 +1,6 @@
 """Model registry imported by Alembic and runtime setup."""
 
+from app.domain.admin_notifications.models import AdminNotification, AdminNotificationPreference
 from app.domain.admin_reviews.models import AdminOrganizationReview, AdminOrganizationReviewComment
 from app.domain.api_keys.models import ApiKey
 from app.domain.audit.models import AuditLog
@@ -15,6 +16,8 @@ from app.domain.webhooks.models import WebhookDelivery, WebhookEndpoint
 
 def import_model_modules() -> None:
     _ = (
+        AdminNotification,
+        AdminNotificationPreference,
         AdminOrganizationReview,
         AdminOrganizationReviewComment,
         AuthSession,

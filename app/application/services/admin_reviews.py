@@ -322,6 +322,12 @@ class AdminReviewService:
                     due_at=due_at,
                 ),
             )
+            from app.application.services.admin_notifications import AdminNotificationService
+
+            AdminNotificationService(self.session).notify_review_auto_opened(
+                actor=actor,
+                review=review,
+            )
             created_count += 1
             results.append(
                 AdminReviewAutoOpenResultItem(
@@ -454,6 +460,13 @@ class AdminReviewService:
             self.session.commit()
 
             detail = self.get_review(actor=actor, review_id=review.id)
+            from app.application.services.admin_notifications import AdminNotificationService
+
+            AdminNotificationService(self.session).notify_review_overdue_escalated(
+                actor=actor,
+                review=detail,
+                days_overdue=preview.days_overdue,
+            )
             escalated_count += 1
             results.append(
                 AdminReviewEscalationResultItem(
