@@ -736,6 +736,48 @@ def test_admin_review_service_remaining_branches_are_covered(
     assert admin_reviews_service._to_utc(aware) is aware
 
 
+def test_admin_review_update_assigns_optional_fields() -> None:
+    actor = build_actor(is_superuser=True)
+    review = SimpleNamespace(
+        id=uuid4(),
+        organization_id=uuid4(),
+        title="Old title",
+        summary="Old summary",
+        status=AdminReviewStatus.OPEN,
+        priority=AdminReviewPriority.LOW,
+        due_at=None,
+        resolved_at=None,
+        assigned_to_user_id=None,
+        risk_score_snapshot=5,
+        risk_level_snapshot="low",
+        anomaly_count_snapshot=1,
+        top_anomaly_codes_json=[],
+    )
+    service = admin_reviews_service.AdminReviewService(SessionRecorder())
+    service.publisher = SimpleNamespace(record_event=lambda **_kwargs: None)
+    service._ensure_superuser = lambda *_args, **_kwargs: None
+    service._get_review = lambda _review_id: review
+    service._resolve_assignee = lambda _user_id: None
+    service.get_review = lambda **_kwargs: review
+
+    updated = service.update_review(
+        actor=actor,
+        review_id=review.id,
+        payload=admin_reviews_service.AdminReviewUpdateRequest(
+            title="New title",
+            summary="New summary",
+            priority=AdminReviewPriority.HIGH,
+            due_at=datetime(2030, 1, 15, 12, 0, tzinfo=UTC),
+        ),
+    )
+
+    assert updated is review
+    assert review.title == "New title"
+    assert review.summary == "New summary"
+    assert review.priority == AdminReviewPriority.HIGH
+    assert review.due_at == datetime(2030, 1, 15, 12, 0, tzinfo=UTC)
+
+
 def test_schema_leftovers_are_covered() -> None:
     assert (
         admin_reviews_service.AdminReviewUpdateRequest.normalize_title.__func__(
