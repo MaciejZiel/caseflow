@@ -1,4 +1,9 @@
+import path from "node:path";
+
 import { defineConfig } from "@playwright/test";
+
+const frontendDir = __dirname;
+const rootDir = path.resolve(frontendDir, "..");
 
 export default defineConfig({
   testDir: "./e2e",
@@ -18,13 +23,15 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: "bash ../scripts/run_e2e_api.sh",
+      command: "bash scripts/run_e2e_api.sh",
+      cwd: rootDir,
       url: "http://127.0.0.1:8001/health",
       reuseExistingServer: false,
       timeout: 120_000,
     },
     {
       command: "bash scripts/run_e2e_frontend.sh",
+      cwd: frontendDir,
       url: "http://127.0.0.1:3001/auth/login",
       reuseExistingServer: false,
       timeout: 120_000,

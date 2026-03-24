@@ -17,8 +17,8 @@ export TEST_DATABASE_URL="sqlite+pysqlite:////tmp/caseflow-e2e.db"
 export SECRET_KEY="caseflow-e2e-secret-key-with-32-plus-bytes"
 export LOCAL_STORAGE_PATH="${STORAGE_PATH}"
 export LOCAL_EMAIL_SINK_PATH="${EMAIL_PATH}"
-export CORS_ALLOWED_ORIGINS="http://127.0.0.1:3001"
-export TRUSTED_HOST_PATTERNS="127.0.0.1,localhost,testserver"
+export CORS_ALLOWED_ORIGINS='["http://127.0.0.1:3001"]'
+export TRUSTED_HOST_PATTERNS='["127.0.0.1", "localhost", "testserver"]'
 
 "${ROOT_DIR}/.venv/bin/python" -m alembic upgrade head
 
