@@ -1,273 +1,412 @@
 # CaseFlow
 
-CaseFlow is a production-like multi-tenant B2B backend for case and document processing.
-It is built as a modular monolith with FastAPI, SQLAlchemy and Alembic, with explicit focus on:
+CaseFlow is a production-style, multi-tenant B2B backend for case and document processing.
 
-- tenant isolation by `organization_id`
-- RBAC for organizations, members, cases, documents and webhooks
+It is built as a modular monolith with **FastAPI**, **SQLAlchemy**, **Alembic**, and **PostgreSQL**, with a focus on the parts that usually separate a demo API from a maintainable backend system:
+
+- tenant isolation
+- authentication and session lifecycle
+- RBAC and API keys
+- explicit document workflows
+- auditability
+- reliable background processing
+- webhook and email delivery
+- operational tooling
+- automated tests and CI
+
+## Why this project exists
+
+CaseFlow is not meant to be another CRUD demo.
+
+The project explores how a backend behaves once real operational concerns appear: multiple organizations using the same system, users with different roles, document state transitions, asynchronous work, retries, audit history, integrations, platform administration, and failure recovery.
+
+The main goal is to keep those concerns explicit and understandable instead of spreading them across unrelated endpoints and ad-hoc background tasks.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Client[Client / Integration]
+
+    API[FastAPI API]
+    Auth[Auth / Sessions / API Keys]
+    Policy[Tenant Context / RBAC]
+    Domain[Cases / Documents / Reviews]
+    Ops[Operations / Admin]
+    DB[(PostgreSQL)]
+    Storage[Document Storage]
+    Queue[Persisted Work / Outbox]
+    Worker[Retry Worker]
+    Webhooks[Webhook Delivery]
+    Email[Email Delivery]
+
+    Client --> API
+    API --> Auth
+    API --> Policy
+    Policy --> Domain
+    API --> Ops
+
+    Auth --> DB
+    Domain --> DB
+    Ops --> DB
+    Domain --> Storage
+    Domain --> Queue
+    Ops --> Queue
+
+    Queue --> Worker
+    Worker --> Webhooks
+    Worker --> Email
+    Worker --> Domain
+```
+
+The application uses a **shared-schema multi-tenant model**. Tenant-aware data is scoped by `organization_id`, while authorization rules are enforced through organization membership and RBAC.
+
+Operational side effects such as document processing, webhook delivery, email delivery, retries, and notification digests can be handled through persisted work records and the background worker.
+
+## Core capabilities
+
+### Multi-tenancy and access control
+
+- organization registration with the first owner account
+- organization membership and invitation flow
+- tenant-scoped cases and documents
+- RBAC across organizations, members, cases, documents, and webhooks
 - organization-scoped API keys for system-to-system integrations
-- session-backed auth with refresh rotation, logout and password reset
-- versioned document uploads with processing jobs
-- review workflow for documents
-- audit logs, webhook delivery history and outbound email outbox
-- operational basics: health, readiness, metrics, structured logging, Docker, workers, CI and
-  deployment-oriented request hardening
+- dedicated read-only integration endpoints
 
-## Implemented Features
+### Authentication and sessions
 
-- organization registration with first owner account
-- JWT login, refresh, logout and password reset
-- auth session listing, per-session revocation, device naming and last-seen activity tracking
-- invitation flow and membership management
-- tenant-scoped case CRUD with archive flow
+- JWT login and refresh flow
+- persisted authentication sessions
+- refresh rotation
+- logout and logout-all
+- per-session revocation
+- device naming
+- last-seen activity tracking
+- password reset flow
+
+### Case and document workflow
+
+- tenant-scoped case CRUD and archive flow
 - case comments
-- document uploads, versioning and configurable inline-or-worker job execution
-- document approve/reject workflow with case status transitions
-- retry worker for failed processing jobs, scheduled admin digests, webhook deliveries and email outbox messages
-- audit log for cases and documents
-- webhook endpoints, event subscriptions, replay tooling, HMAC-signed deliveries and delivery history
-- pluggable email delivery backends with local sink and SMTP adapter
-- organization API keys with scoped read-only integration endpoints
-- case summary reporting, case search and CSV export surfaces
-- security headers, trusted host filtering, opt-in proxy header trust and CORS allowlists
-- organization operations summary, failure inspection and scoped retry-due maintenance endpoints
-- retention preview/run endpoints for old delivered webhooks and sent outbound emails
-- platform admin overview, anomaly detection, risk reporting, tenant activity feed and bulk lifecycle controls
-- platform admin review queue with assignees, comments, due dates, tenant risk snapshots, auto-open flows, auto-assignment flows, overdue escalation tooling, workload insights, attention queue, operator notifications, manual digest delivery and scheduled digest preferences
-- demo data seeding script for a ready-to-show local environment
-- Alembic migrations and integration tests
+- document uploads and versioning
+- configurable inline or worker-based document processing
+- approve / reject review workflow
+- case status transitions
+- retry support for failed processing jobs
+- audit logs for cases and documents
 
-## API Highlights
+### Webhooks and email delivery
 
-- `POST /api/v1/auth/register`
-- `POST /api/v1/auth/login`
-- `POST /api/v1/auth/refresh`
-- `POST /api/v1/auth/logout`
-- `POST /api/v1/auth/logout-all`
-- `GET /api/v1/auth/sessions`
-- `PATCH /api/v1/auth/sessions/{session_id}`
-- `DELETE /api/v1/auth/sessions/{session_id}`
-- `POST /api/v1/auth/password-reset/request`
-- `POST /api/v1/auth/password-reset/confirm`
-- `GET /api/v1/me`
-- `POST /api/v1/api-keys`
-- `GET /api/v1/api-keys`
-- `POST /api/v1/api-keys/{api_key_id}/revoke`
-- `GET /api/v1/admin/organizations`
-- `GET /api/v1/admin/organizations/{organization_id}`
-- `GET /api/v1/admin/organizations/{organization_id}/activity`
-- `POST /api/v1/admin/organizations/bulk-status`
-- `GET /api/v1/admin/overview`
-- `GET /api/v1/admin/anomalies`
-- `GET /api/v1/admin/risk-report`
-- `GET /api/v1/admin/exports/organizations.csv`
-- `GET /api/v1/admin/reviews/summary`
-- `GET /api/v1/admin/reviews/workload`
-- `GET /api/v1/admin/reviews/attention-queue`
-- `GET /api/v1/admin/reviews/auto-assign-preview`
-- `POST /api/v1/admin/reviews/auto-assign`
-- `GET /api/v1/admin/reviews/auto-open-preview`
-- `POST /api/v1/admin/reviews/auto-open`
-- `GET /api/v1/admin/reviews/escalation-preview`
-- `POST /api/v1/admin/reviews/escalate-overdue`
-- `GET /api/v1/admin/notifications`
-- `GET /api/v1/admin/notifications/summary`
-- `GET /api/v1/admin/notifications/digest-preview`
-- `GET /api/v1/admin/notifications/preferences`
-- `PATCH /api/v1/admin/notifications/preferences`
-- `POST /api/v1/admin/notifications/{notification_id}/read`
-- `POST /api/v1/admin/notifications/send-digest`
-- `POST /api/v1/admin/notifications/read-all`
-- `GET /api/v1/admin/reviews`
-- `POST /api/v1/admin/organizations/{organization_id}/reviews`
-- `GET /api/v1/admin/reviews/{review_id}`
-- `PATCH /api/v1/admin/reviews/{review_id}`
-- `POST /api/v1/admin/reviews/{review_id}/comments`
-- `GET /api/v1/admin/failures`
-- `POST /api/v1/admin/organizations/{organization_id}/suspend`
-- `POST /api/v1/admin/organizations/{organization_id}/reactivate`
-- `POST /api/v1/admin/retry-due`
-- `GET /api/v1/reports/cases/summary`
-- `GET /api/v1/search/cases`
-- `GET /api/v1/operations/summary`
-- `GET /api/v1/operations/failures`
-- `POST /api/v1/operations/retry-due`
-- `GET /api/v1/operations/retention-preview`
-- `POST /api/v1/operations/retention-run`
-- `POST /api/v1/organizations/current/invitations`
-- `GET /api/v1/organizations/current/members`
-- `GET /api/v1/integrations/cases`
-- `GET /api/v1/integrations/cases/{case_id}`
-- `GET /api/v1/integrations/cases/{case_id}/documents`
-- `GET /api/v1/integrations/exports/cases.csv`
-- `GET /api/v1/integrations/documents/{document_id}`
-- `POST /api/v1/cases`
-- `POST /api/v1/cases/{case_id}/comments`
-- `GET /api/v1/cases/{case_id}/audit-log`
-- `POST /api/v1/cases/{case_id}/documents`
-- `POST /api/v1/documents/{document_id}/versions`
-- `POST /api/v1/documents/{document_id}/approve`
-- `POST /api/v1/documents/{document_id}/reject`
-- `POST /api/v1/documents/{document_id}/jobs/{job_id}/retry`
-- `GET /api/v1/documents/{document_id}/audit-log`
-- `POST /api/v1/webhooks/endpoints`
-- `PATCH /api/v1/webhooks/endpoints/{endpoint_id}`
-- `GET /api/v1/webhooks/deliveries`
-- `POST /api/v1/webhooks/deliveries/{delivery_id}/retry`
-- `POST /api/v1/webhooks/deliveries/{delivery_id}/replay`
-- `GET /health`
-- `GET /ready`
-- `GET /metrics`
+- webhook endpoint management
+- event subscriptions
+- HMAC-signed webhook delivery
+- delivery history
+- retry and replay support
+- persisted outbound email outbox
+- local email sink for development
+- SMTP adapter for real delivery
 
-## Local Development
+### Reporting and operations
 
-1. Create or reuse `.venv`.
-2. Install dependencies with `make install`.
-3. Copy `.env.example` to `.env` and adjust values if needed.
-4. Apply migrations with `make migrate`.
-5. Start the API with `make run`.
-6. Optionally preload a ready-to-demo workspace with `make seed-demo`.
-7. Run the retry worker with `make retry-worker` or a single cycle with `make retry-worker-once`.
-8. Pick delivery modes in `.env` if you want workers or SMTP instead of local inline flows.
-9. Tune `AUTH_SESSION_ACTIVITY_UPDATE_INTERVAL_SECONDS` if you want less or more frequent
-   session activity writes.
-10. Set `CORS_ALLOWED_ORIGINS` and `TRUSTED_HOST_PATTERNS` as JSON arrays before putting the API
-    behind a real frontend or public ingress.
-11. Enable `TRUST_PROXY_HEADERS` only when the app runs behind a trusted reverse proxy.
-12. Promote a platform admin with `make promote-superuser EMAIL=owner@example.com` if you need
-    access to `/api/v1/admin/*`.
-13. Tune `ADMIN_FAILURE_ANOMALY_THRESHOLD` and `ADMIN_QUEUE_STALE_HOURS` if you want stricter or
-    looser platform anomaly detection.
-14. Run checks with `make lint` and `make test`.
+- case summary reporting
+- case search
+- CSV exports
+- organization operations summary
+- failure inspection
+- retry-due maintenance endpoints
+- retention preview and cleanup flows
 
-## Demo Dataset
+### Platform administration
 
-Run `make seed-demo` after migrations to create:
+- platform overview
+- anomaly detection
+- risk reporting
+- tenant activity feed
+- tenant suspension and reactivation
+- review queue with assignees, comments, and due dates
+- risk snapshots
+- workload and attention views
+- automatic review opening
+- automatic assignment
+- overdue escalation
+- operator notifications
+- notification digests and preferences
+- bulk lifecycle controls
+
+## Engineering decisions
+
+A large part of the project is about keeping backend behavior predictable as the system grows.
+
+### Shared-schema multi-tenancy
+
+Tenant data is scoped explicitly by `organization_id`.
+
+This keeps the data model simple while making tenant boundaries visible in queries and authorization logic.
+
+### Persisted auth sessions
+
+Access tokens are short-lived JWTs, but they are tied to persisted sessions.
+
+That allows immediate logout, session revocation, device metadata, and activity tracking without relying only on token expiration.
+
+### Scoped API keys
+
+Organization API keys are hashed at rest and exposed through dedicated integration endpoints instead of granting broad write access to the main API.
+
+### Explicit workflow state
+
+Documents move through controlled review and processing flows rather than arbitrary state updates.
+
+Audit records preserve the history of important actions.
+
+### One retry path
+
+Organization maintenance endpoints, platform-wide retry operations, and the worker reuse the same persisted work and retry machinery.
+
+That avoids creating multiple execution paths for the same failure handling logic.
+
+### Webhook replay preserves history
+
+Replaying a webhook creates a new delivery record instead of mutating historical delivery state.
+
+This keeps the original delivery history intact.
+
+### Previewable maintenance operations
+
+Retention cleanup and several platform administration actions expose preview flows before execution.
+
+That makes destructive or bulk operations easier to inspect and reason about.
+
+### Reused operational data
+
+Risk reporting, anomaly detection, review queues, workload views, escalation, and notification flows reuse the same underlying tenant and review state instead of introducing separate parallel systems.
+
+## Selected API surface
+
+The project exposes a larger API, but these endpoints represent the main system areas:
+
+```text
+POST   /api/v1/auth/register
+POST   /api/v1/auth/login
+POST   /api/v1/auth/refresh
+GET    /api/v1/auth/sessions
+
+POST   /api/v1/api-keys
+GET    /api/v1/api-keys
+
+POST   /api/v1/cases
+POST   /api/v1/cases/{case_id}/documents
+GET    /api/v1/cases/{case_id}/audit-log
+
+POST   /api/v1/documents/{document_id}/approve
+POST   /api/v1/documents/{document_id}/reject
+POST   /api/v1/documents/{document_id}/jobs/{job_id}/retry
+
+POST   /api/v1/webhooks/endpoints
+GET    /api/v1/webhooks/deliveries
+POST   /api/v1/webhooks/deliveries/{delivery_id}/replay
+
+GET    /api/v1/operations/summary
+GET    /api/v1/operations/failures
+
+GET    /api/v1/admin/overview
+GET    /api/v1/admin/risk-report
+GET    /api/v1/admin/reviews
+GET    /api/v1/admin/reviews/attention-queue
+
+GET    /health
+GET    /ready
+GET    /metrics
+```
+
+## Local development
+
+### 1. Install dependencies
+
+Create or reuse a virtual environment and run:
+
+```bash
+make install
+```
+
+### 2. Configure the environment
+
+Copy the example configuration:
+
+```bash
+cp .env.example .env
+```
+
+Adjust values if needed.
+
+### 3. Apply migrations
+
+```bash
+make migrate
+```
+
+### 4. Start the API
+
+```bash
+make run
+```
+
+### 5. Optional: seed demo data
+
+```bash
+make seed-demo
+```
+
+The demo dataset includes:
 
 - one demo organization: `demo-claims`
-- owner, admin, reviewer and member accounts with preset passwords
-- approved, rejected, failed-processing and archived cases
-- multi-version document history, comments and an inactive webhook endpoint
+- owner, admin, reviewer, and member accounts
+- approved, rejected, failed-processing, and archived cases
+- multi-version document history
+- comments
+- an inactive webhook endpoint
 
-The script prints a JSON summary with seeded credentials, case references and storage location.
-It refuses to overwrite an existing demo dataset unless you pass `--replace-existing` directly to
-`scripts/seed_demo_data.py`.
+### 6. Optional: run the worker
 
-## Local Email Sink
+```bash
+make retry-worker
+```
 
-Invitation and password reset emails go through the persisted outbox and can be delivered with:
+For a single worker cycle:
 
-- `EMAIL_DELIVERY_BACKEND=local` writing JSON payloads to `LOCAL_EMAIL_SINK_PATH`
-- `EMAIL_DELIVERY_BACKEND=smtp` using `SMTP_*` settings for real delivery
+```bash
+make retry-worker-once
+```
 
-`EMAIL_DELIVERY_MODE=sync` sends immediately during the request path.
-`EMAIL_DELIVERY_MODE=worker` leaves messages pending for the retry worker.
+## Worker modes
 
-## Worker Modes
+CaseFlow can run synchronously for a simple local setup or defer work to the background worker.
 
-CaseFlow can run synchronously for a simple local setup or defer side effects to the worker:
+```text
+DOCUMENT_PROCESSING_MODE=inline|worker
+WEBHOOK_DELIVERY_MODE=sync|worker
+EMAIL_DELIVERY_MODE=sync|worker
+```
 
-- `DOCUMENT_PROCESSING_MODE=inline|worker`
-- `WEBHOOK_DELIVERY_MODE=sync|worker`
-- `EMAIL_DELIVERY_MODE=sync|worker`
+When worker mode is enabled, work is persisted first and processed through the retry worker.
 
-When a `worker` mode is enabled, records are persisted first and processed by
-`scripts/run_retry_worker.py` / `make retry-worker`. The same worker cycle also processes due
-platform admin notification digests.
+The same worker cycle can also process platform admin notification digests.
+
+## Email delivery
+
+Invitation and password reset emails are written through a persisted outbox.
+
+Available backends:
+
+```text
+EMAIL_DELIVERY_BACKEND=local
+EMAIL_DELIVERY_BACKEND=smtp
+```
+
+The local backend writes JSON payloads to the configured local sink path.
+
+SMTP settings can be used for real delivery.
 
 ## Docker
 
-1. Copy `.env.example` if you want a local reference for settings.
-2. Start the stack with `make docker-up`.
-3. API will be available on `http://127.0.0.1:8000`.
-4. Stop and remove data volumes with `make docker-down`.
+Start the local stack with:
 
-The Docker stack currently includes:
+```bash
+make docker-up
+```
 
-- `api` running FastAPI with migrations on startup
-- `db` running PostgreSQL 17
-- persistent storage volume for uploaded documents
+The Docker setup includes:
 
-## Testing
+- FastAPI application
+- PostgreSQL 17
+- migrations on application startup
+- persistent storage for uploaded documents
 
-Current verification baseline:
+Stop the stack and remove data volumes with:
 
-- `make lint`
-- `make test`
-- `alembic upgrade head` on a clean SQLite database
-- retry worker cycle through `scripts/run_retry_worker.py`
-- GitHub Actions workflow in `.github/workflows/ci.yml` running lint, tests and PostgreSQL migration verification
+```bash
+make docker-down
+```
 
-Integration tests cover:
+## Testing and CI
 
-- auth session lifecycle, device metadata and password reset
-- API key management and tenant-scoped integration access
-- case reporting, search and CSV export
-- operational summary, failures and maintenance retry endpoints
-- platform admin overview, anomaly detection, risk reporting, review queue, workload insights, attention queue, review auto-open flows, review auto-assignment flows, overdue escalation tooling, operator notifications, activity feed and bulk lifecycle controls
-- retention preview and cleanup controls
-- email outbox and local sink delivery
+Run the local verification baseline with:
+
+```bash
+make lint
+make test
+```
+
+The project also verifies:
+
+- Alembic migrations on a clean database
+- retry worker execution
+- PostgreSQL migrations in GitHub Actions
+
+Integration tests cover areas including:
+
+- authentication and session lifecycle
+- password reset
+- invitations and membership
+- tenant isolation
+- API key management
+- case reporting and search
+- document processing and review
+- audit logs
+- webhook delivery, retry, and replay
+- email outbox delivery
+- operational maintenance
+- platform administration
+- anomaly and risk reporting
+- review queue workflows
+- retention operations
 - demo data seeding
-- auth and invitations
-- tenant isolation for cases and documents
-- document processing and review workflow
-- audit log generation
-- webhook delivery success and failure handling
-- worker-driven retries for due failures
 
-## Current Architecture Notes
+## Operational hardening
 
-- The project uses shared-schema multi-tenancy with explicit query scoping.
-- Access tokens are short-lived JWTs bound to persisted auth sessions for immediate logout support.
-- Auth sessions keep stable client metadata, rolling `last_seen_*` activity snapshots and optional
-  user-defined device names.
-- API keys are hashed at rest, scoped per organization and exposed through dedicated integration
-  endpoints instead of broad write access to the main app API.
-- Reporting and search stay tenant-scoped and reuse the same domain model instead of creating a
-  second analytics datastore too early.
-- Webhook endpoints can subscribe to selected event types, while replay creates a fresh delivery
-  record instead of mutating historical delivery state.
-- Maintenance endpoints stay organization-scoped and reuse the same retry machinery as the worker
-  instead of introducing a second execution path.
-- Platform admin endpoints stay explicitly superuser-only and can suspend tenants without leaving
-  their existing auth sessions reusable after reactivation.
-- Platform-wide retry uses the same persisted queues as organization-scoped maintenance and the
-  background worker, so operational behavior does not fork between code paths.
-- Platform anomaly detection is query-driven over real tenant state, so it can flag ownerless
-  organizations, stale worker backlogs and inconsistent inactive tenants without a separate rules
-  engine.
-- Platform risk reporting reuses anomaly scoring plus tenant health counters, so operators can sort
-  tenants by urgency and export the same snapshot as CSV without duplicating logic elsewhere.
-- Platform review workflow stores assignee, due date, comments and captured risk context separately
-  from live anomaly queries, so triage history survives even when tenant health changes later.
-- Review auto-open preview and execution reuse the same risk-report data and active-review guard, so
-  operators can bulk-open follow-ups without forking review creation rules from the manual path.
-- Overdue escalation preview and execution reuse the same review state model, so SLA-driven urgency
-  changes, reassignment and escalation comments stay on the normal review timeline instead of a
-  separate ops-only path.
-- Review workload and attention queue endpoints derive directly from the persisted review state, so
-  assignee load, overdue pressure and unassigned follow-ups stay visible without a separate cache or
-  reporting pipeline.
-- Review auto-assignment reuses the same attention ordering and reviewer load model, so unassigned
-  follow-ups can be distributed deterministically without introducing a second balancing subsystem.
-- Platform admin notifications persist separately from tenant audit logs and can fan out through the
-  existing email outbox, so operators get both an in-app feed and optional email alerts without
-  inventing a second delivery pipeline.
-- Notification digests reuse the same persisted admin notification feed and email outbox, so manual
-  preview/send and scheduled delivery do not introduce a second aggregation store or a separate mail
-  delivery mechanism.
-- Superuser access is managed explicitly through a dedicated service and script instead of being
-  hardcoded into registration or environment-only bootstrap logic.
-- Retention cleanup is explicit and previewable, so old operational records can be pruned without
-  blind deletes.
-- Proxy-derived client metadata is opt-in, while CORS and host filtering stay configuration-driven
-  for deployment safety.
-- Document processing, webhook delivery and outbound emails can run inline for local simplicity or via
-  persisted worker queues for asynchronous execution.
-- Webhook deliveries and emails use persisted outbox records with retry scheduling.
-- Storage uses a local filesystem adapter behind a storage abstraction.
+The project includes:
 
-## Next High-Value Steps
+- health and readiness endpoints
+- metrics
+- structured logging
+- security headers
+- trusted host filtering
+- configurable CORS allowlists
+- opt-in proxy header trust
+- Docker-based local environment
+- CI verification
 
-- internal admin UI for platform operators on top of the review queue APIs
+Before exposing the API through a public ingress, configure trusted hosts and allowed origins appropriately and enable proxy header trust only behind a trusted reverse proxy.
+
+## Project structure
+
+```text
+.
+├── app/                # application code
+├── alembic/            # database migrations
+├── docs/               # additional documentation
+├── scripts/            # worker, demo and maintenance scripts
+├── tests/              # integration tests
+├── .github/workflows/  # CI
+├── Dockerfile
+├── compose.yml
+├── Makefile
+└── pyproject.toml
+```
+
+## Current limitations / next steps
+
+High-value next steps currently include:
+
+- an internal admin UI on top of the platform review queue APIs
 - notification quiet hours or routing rules for different platform admin roles
+
+## Tech stack
+
+**Backend:** FastAPI, SQLAlchemy, Alembic  
+**Database:** PostgreSQL  
+**Auth:** JWT + persisted sessions + organization API keys  
+**Async / delivery:** persisted worker queues, webhook delivery, email outbox  
+**Operations:** Docker, metrics, structured logging, CI  
+**Testing:** integration tests + migration verification
