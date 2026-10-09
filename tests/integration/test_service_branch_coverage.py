@@ -78,9 +78,7 @@ async def test_organization_member_update_guardrails_cover_owner_edge_cases(
     )
     assert owner_members.status_code == 200
     owner_membership_id = next(
-        member["id"]
-        for member in owner_members.json()
-        if member["user"]["email"] == owner["email"]
+        member["id"] for member in owner_members.json() if member["user"]["email"] == owner["email"]
     )
 
     admin_modifies_owner = await async_client.patch(
@@ -573,8 +571,7 @@ async def test_assistant_covers_empty_archived_and_failed_document_paths(
     assert empty_body["assistant_message"]["citations_json"] == []
     assert "Due date: 2030-01-15." in empty_body["assistant_message"]["content"]
     assert (
-        "No documents are attached to this case yet"
-        in empty_body["assistant_message"]["content"]
+        "No documents are attached to this case yet" in empty_body["assistant_message"]["content"]
     )
     assert "The case is archived" in empty_body["assistant_message"]["content"]
 

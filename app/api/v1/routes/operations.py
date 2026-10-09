@@ -42,8 +42,7 @@ async def list_operations_failures(
 ) -> list[OperationsFailureResponse]:
     failures = OperationsService(session).list_recent_failures(actor=actor, limit=limit)
     return [
-        OperationsFailureResponse.model_validate(item, from_attributes=True)
-        for item in failures
+        OperationsFailureResponse.model_validate(item, from_attributes=True) for item in failures
     ]
 
 

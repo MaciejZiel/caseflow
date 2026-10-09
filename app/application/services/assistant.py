@@ -262,9 +262,7 @@ class AssistantService:
             return []
 
         version_ids = [
-            document.current_version_id
-            for document in documents
-            if document.current_version_id
+            document.current_version_id for document in documents if document.current_version_id
         ]
         versions = {
             version.id: version
@@ -309,8 +307,7 @@ class AssistantService:
                         current_version.original_filename if current_version else None
                     ),
                     excerpt=(
-                        preview_text
-                        or "No extracted preview is available yet for this document."
+                        preview_text or "No extracted preview is available yet for this document."
                     ),
                     score=score,
                 )

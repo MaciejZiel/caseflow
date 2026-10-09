@@ -374,9 +374,7 @@ def test_auth_membership_activity_and_device_helpers_cover_remaining_paths() -> 
         auth_service.AuthService(SessionRecorder())._ensure_auth_session_is_active(inactive_org)
 
     auth_session = SimpleNamespace()
-    assert (
-        auth_service.touch_auth_session_activity(auth_session, client_context=None) is False
-    )
+    assert auth_service.touch_auth_session_activity(auth_session, client_context=None) is False
 
     now = datetime.now(UTC)
     settings = SimpleNamespace(auth_session_activity_update_interval_seconds=60)

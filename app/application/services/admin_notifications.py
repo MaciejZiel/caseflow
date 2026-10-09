@@ -611,8 +611,7 @@ class AdminNotificationService:
             body_text=(
                 "Platform admin notification digest\n\n"
                 f"Unread only: {'yes' if unread_only else 'no'}\n"
-                f"Included notifications: {preview.total_count}\n\n"
-                + "\n".join(lines)
+                f"Included notifications: {preview.total_count}\n\n" + "\n".join(lines)
             ),
             payload_json={
                 "unread_only": unread_only,

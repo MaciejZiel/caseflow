@@ -122,8 +122,7 @@ async def list_case_comments(
 ) -> list[CaseCommentResponse]:
     comments = CaseService(session).list_comments(actor=actor, case_id=case_id)
     return [
-        CaseCommentResponse.model_validate(comment, from_attributes=True)
-        for comment in comments
+        CaseCommentResponse.model_validate(comment, from_attributes=True) for comment in comments
     ]
 
 

@@ -73,8 +73,7 @@ async def list_case_documents(
         case_id=case_id,
     )
     return [
-        DocumentResponse.model_validate(document, from_attributes=True)
-        for document in documents
+        DocumentResponse.model_validate(document, from_attributes=True) for document in documents
     ]
 
 

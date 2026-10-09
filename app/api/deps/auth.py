@@ -26,6 +26,7 @@ SessionDep = Annotated[Session, Depends(get_db_session)]
 CurrentActor = ActorContext
 SuperuserActor = ActorContext
 
+
 async def get_current_actor(
     credentials: CredentialsDep,
     session: SessionDep,

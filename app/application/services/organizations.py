@@ -106,9 +106,9 @@ class OrganizationService:
             )
         if target.role == OrganizationRole.OWNER and payload.is_active is False:
             self._ensure_not_disabling_last_owner(target)
-        if (
-            target.role == OrganizationRole.OWNER
-            and payload.role not in (None, OrganizationRole.OWNER)
+        if target.role == OrganizationRole.OWNER and payload.role not in (
+            None,
+            OrganizationRole.OWNER,
         ):
             self._ensure_not_demoting_last_owner(target)
 

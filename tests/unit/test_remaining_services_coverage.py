@@ -576,14 +576,17 @@ def test_admin_notification_service_remaining_branches_are_covered(
     service = admin_notifications_service.AdminNotificationService(
         SessionRecorder(scalars_values=[[]])
     )
-    assert service._list_notification_models_for_user(
-        user_id=actor.user.id,
-        unread_only=True,
-        notification_type=AdminNotificationType.REVIEW_AUTO_OPENED,
-        limit=10,
-        offset=0,
-        created_after=datetime.now(UTC) - timedelta(days=1),
-    ) == []
+    assert (
+        service._list_notification_models_for_user(
+            user_id=actor.user.id,
+            unread_only=True,
+            notification_type=AdminNotificationType.REVIEW_AUTO_OPENED,
+            limit=10,
+            offset=0,
+            created_after=datetime.now(UTC) - timedelta(days=1),
+        )
+        == []
+    )
 
     assert (
         admin_notifications_service.AdminNotificationService._build_next_digest_due_at(
@@ -680,29 +683,36 @@ def test_admin_review_service_remaining_branches_are_covered(
         updated_at=datetime.now(UTC),
     )
     monkeypatch.setattr(service, "_list_active_reviews", lambda: [no_reason_review])
-    monkeypatch.setattr(service, "_build_review_list_items", lambda reviews: [
-        SimpleNamespace(
-            id=reviews[0].id,
-            due_at=None,
-            priority=AdminReviewPriority.NORMAL,
-            updated_at=reviews[0].updated_at,
-        )
-    ])
+    monkeypatch.setattr(
+        service,
+        "_build_review_list_items",
+        lambda reviews: [
+            SimpleNamespace(
+                id=reviews[0].id,
+                due_at=None,
+                priority=AdminReviewPriority.NORMAL,
+                updated_at=reviews[0].updated_at,
+            )
+        ],
+    )
     monkeypatch.setattr(service, "_build_attention_reasons", lambda **_kwargs: [])
     assert service.list_attention_queue(actor=actor, limit=10) == []
 
     service = admin_reviews_service.AdminReviewService(SessionRecorder(scalars_values=[[]]))
     monkeypatch.setattr(service, "_ensure_superuser", lambda *_args, **_kwargs: None)
-    assert service.list_reviews(
-        actor=actor,
-        organization_id=None,
-        status=None,
-        priority=AdminReviewPriority.HIGH,
-        assigned_to_user_id=None,
-        assigned_to_me=False,
-        search="tenant",
-        limit=10,
-    ) == []
+    assert (
+        service.list_reviews(
+            actor=actor,
+            organization_id=None,
+            status=None,
+            priority=AdminReviewPriority.HIGH,
+            assigned_to_user_id=None,
+            assigned_to_me=False,
+            search="tenant",
+            limit=10,
+        )
+        == []
+    )
 
     assert service._build_review_list_items([]) == []
     assert service._load_active_review_ids(set()) == {}

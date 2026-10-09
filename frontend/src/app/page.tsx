@@ -31,12 +31,12 @@ const featureCards = [
 const outcomeCards = [
   {
     label: "Review throughput",
-    value: "24 active",
+    value: "Queue view",
     description: "Operators can spot queue pressure, overdue work and cases likely to block next.",
   },
   {
     label: "Evidence trail",
-    value: "312 docs",
+    value: "Versioned",
     description: "Documents, versions and audit events stay attached to the case instead of living in chat history.",
   },
   {
@@ -117,7 +117,7 @@ export default function Home() {
             <div className="surface-card p-6 md:p-7">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="eyebrow">Live snapshot</p>
+                  <p className="eyebrow">Inside the workspace</p>
                   <h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-slate-950">
                     Review desk
                   </h2>
