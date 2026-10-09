@@ -65,6 +65,23 @@ async def test_cors_preflight_allows_configured_origin(tmp_path, monkeypatch) ->
 
 
 @pytest.mark.asyncio
+async def test_cors_preflight_allows_default_local_frontend_origin(tmp_path, monkeypatch) -> None:
+    async with configured_async_client(tmp_path, monkeypatch) as async_client:
+        response = await async_client.options(
+            "/api/v1/auth/login",
+            headers={
+                "Origin": "http://127.0.0.1:3000",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:3000"
+    assert "POST" in response.headers["access-control-allow-methods"]
+
+
+@pytest.mark.asyncio
 async def test_trusted_host_middleware_blocks_unconfigured_hosts(tmp_path, monkeypatch) -> None:
     async with configured_async_client(
         tmp_path,

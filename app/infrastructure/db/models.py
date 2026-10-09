@@ -3,6 +3,7 @@
 from app.domain.admin_notifications.models import AdminNotification, AdminNotificationPreference
 from app.domain.admin_reviews.models import AdminOrganizationReview, AdminOrganizationReviewComment
 from app.domain.api_keys.models import ApiKey
+from app.domain.assistant.models import AssistantConversation, AssistantMessage
 from app.domain.audit.models import AuditLog
 from app.domain.auth.models import AuthSession, PasswordResetToken
 from app.domain.cases.models import Case, CaseComment
@@ -20,6 +21,8 @@ def import_model_modules() -> None:
         AdminNotificationPreference,
         AdminOrganizationReview,
         AdminOrganizationReviewComment,
+        AssistantConversation,
+        AssistantMessage,
         AuthSession,
         PasswordResetToken,
         ApiKey,

@@ -6,6 +6,7 @@ from app.api.v1.routes.admin import router as admin_router
 from app.api.v1.routes.admin_notifications import router as admin_notifications_router
 from app.api.v1.routes.admin_reviews import router as admin_reviews_router
 from app.api.v1.routes.api_keys import router as api_keys_router
+from app.api.v1.routes.assistant import router as assistant_router
 from app.api.v1.routes.auth import router as auth_router
 from app.api.v1.routes.cases import router as cases_router
 from app.api.v1.routes.documents import case_router as case_documents_router
@@ -21,6 +22,7 @@ api_router.include_router(admin_router, tags=["admin"])
 api_router.include_router(admin_notifications_router, tags=["admin"])
 api_router.include_router(admin_reviews_router, tags=["admin"])
 api_router.include_router(api_keys_router, tags=["api-keys"])
+api_router.include_router(assistant_router, tags=["assistant"])
 api_router.include_router(auth_router, tags=["auth"])
 api_router.include_router(cases_router, tags=["cases"])
 api_router.include_router(case_documents_router, tags=["documents"])

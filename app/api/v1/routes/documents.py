@@ -53,6 +53,19 @@ async def create_document(
     return response
 
 
+@case_router.get("/{case_id}/documents", response_model=list[DocumentResponse])
+async def list_case_documents(
+    case_id: UUID,
+    actor: CurrentActorDep,
+    session: SessionDep,
+) -> list[DocumentResponse]:
+    documents = DocumentService(session).list_case_documents(actor=actor, case_id=case_id)
+    return [
+        DocumentResponse.model_validate(document, from_attributes=True)
+        for document in documents
+    ]
+
+
 @document_router.get("/{document_id}", response_model=DocumentResponse)
 async def get_document(
     document_id: UUID,

@@ -179,6 +179,27 @@ class DocumentService:
             raise NotFoundError("document", "Document does not exist.")
         return document
 
+    def list_case_documents(self, *, actor: ActorContext, case_id: UUID) -> list[Document]:
+        ensure_role_allowed(
+            actor.membership.role,
+            allowed_roles=DOCUMENT_READ_ROLES,
+            message="Your role cannot view documents.",
+        )
+        case = self._get_case_for_actor(actor=actor, case_id=case_id)
+        if case is None:
+            raise NotFoundError("case", "Case does not exist.")
+        return list(
+            self.session.scalars(
+                select(Document)
+                .where(
+                    Document.case_id == case_id,
+                    Document.organization_id == actor.organization.id,
+                    Document.deleted_at.is_(None),
+                )
+                .order_by(Document.created_at.desc(), Document.updated_at.desc())
+            )
+        )
+
     def list_versions(self, *, actor: ActorContext, document_id: UUID) -> list[DocumentVersion]:
         self.get_document(actor=actor, document_id=document_id)
         return list(

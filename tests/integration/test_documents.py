@@ -81,6 +81,57 @@ async def test_owner_can_create_document_and_inspect_versions_and_jobs(
 
 
 @pytest.mark.asyncio
+async def test_owner_can_list_documents_for_case(async_client: httpx.AsyncClient) -> None:
+    owner = await register_owner(async_client)
+    first_case = await create_case(
+        async_client,
+        access_token=owner["access_token"],
+        title="First case",
+    )
+    second_case = await create_case(
+        async_client,
+        access_token=owner["access_token"],
+        title="Second case",
+    )
+
+    first_document = await async_client.post(
+        f"/api/v1/cases/{first_case['id']}/documents",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+        json={
+            "title": "First case invoice",
+            "document_type": "invoice",
+            "original_filename": "first.pdf",
+            "mime_type": "application/pdf",
+            "content_base64": encode_document_content(b"first-case-content"),
+        },
+    )
+    second_document = await async_client.post(
+        f"/api/v1/cases/{second_case['id']}/documents",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+        json={
+            "title": "Second case statement",
+            "document_type": "statement",
+            "original_filename": "second.txt",
+            "mime_type": "text/plain",
+            "content_base64": encode_document_content(b"second-case-content"),
+        },
+    )
+
+    assert first_document.status_code == 201
+    assert second_document.status_code == 201
+
+    listed = await async_client.get(
+        f"/api/v1/cases/{first_case['id']}/documents",
+        headers={"Authorization": f"Bearer {owner['access_token']}"},
+    )
+
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1
+    assert listed.json()[0]["id"] == first_document.json()["id"]
+    assert listed.json()[0]["case_id"] == first_case["id"]
+
+
+@pytest.mark.asyncio
 async def test_member_can_upload_new_document_version(async_client: httpx.AsyncClient) -> None:
     owner = await register_owner(async_client)
     case = await create_case(async_client, access_token=owner["access_token"])

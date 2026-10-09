@@ -8,11 +8,14 @@
 .ruff_cache/
 .venv/
 .tmp/
+temp/
 storage/
 __pycache__/
 build/
 dist/
 htmlcov/
+frontend/playwright-report/
+frontend/test-results/
 *.pyc
 *.pyo
 *.pyd
