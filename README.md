@@ -1,464 +1,215 @@
 # CaseFlow
 
+**A multi-tenant B2B backend for case and document workflows — tenant isolation, RBAC, persisted sessions, audit trails, retryable background work and signed webhooks — with a Next.js workspace on top.**
+
 [![CI](https://github.com/MaciejZiel/caseflow/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/MaciejZiel/caseflow/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Python 3.13](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![PostgreSQL 17](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
 
-CaseFlow is a production-style, multi-tenant B2B backend for case and document processing.
+Live demo: coming soon — deploy with the button below
 
-It is built as a modular monolith with **FastAPI**, **SQLAlchemy**, **Alembic**, and **PostgreSQL**, with a focus on the parts that usually separate a demo API from a maintainable backend system:
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/MaciejZiel/caseflow)
 
-- tenant isolation
-- authentication and session lifecycle
-- RBAC and API keys
-- explicit document workflows
-- auditability
-- reliable background processing
-- webhook and email delivery
-- operational tooling
-- automated tests and CI
+![Signing in to the demo workspace, opening a case and asking the case assistant](docs/images/demo.gif)
 
-On top of the backend, a **Next.js** workspace (`frontend/`) exposes the main flows to operators, and a **case-scoped assistant** answers questions using the case's own documents and comments, with citations.
+## What it does
 
-## Why this project exists
+- **Isolates tenants in one shared schema.** Every tenant-owned row carries `organization_id`; organization membership and role-based policies decide who can read, write, review or retry.
+- **Runs an explicit document workflow.** Uploads are versioned, processed inline or by a worker, and approved or rejected through a review flow; every important action lands in an audit log.
+- **Handles side effects reliably.** Document processing, HMAC-signed webhooks and outbound email go through persisted work records with retries and replay, driven by one retry worker.
+- **Gives platform operators tooling.** Risk and anomaly reports, a review queue with assignees and due dates, escalation, notification digests, previewable retention cleanup and tenant suspension.
+- **Answers questions about a case.** A case-scoped assistant ranks the case's documents and latest comment against the question and returns a structured answer with stored citations. It is deterministic (keyword scoring and templates) — no external LLM is called.
 
-CaseFlow is not meant to be another CRUD demo.
-
-The project explores how a backend behaves once real operational concerns appear: multiple organizations using the same system, users with different roles, document state transitions, asynchronous work, retries, audit history, integrations, platform administration, and failure recovery.
-
-The main goal is to keep those concerns explicit and understandable instead of spreading them across unrelated endpoints and ad-hoc background tasks.
+| Operations dashboard | Case assistant with citations |
+| --- | --- |
+| ![Operations dashboard for the demo-claims workspace](docs/images/dashboard.png) | ![Case assistant answering a review question with cited evidence](docs/images/case-assistant.png) |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    Client[Client / Integration]
+    Web[Next.js workspace] --> API
+    Client[Integrations / API keys] --> API
 
-    API[FastAPI API]
-    Auth[Auth / Sessions / API Keys]
-    Policy[Tenant Context / RBAC]
-    Domain[Cases / Documents / Reviews]
-    Ops[Operations / Admin]
-    DB[(PostgreSQL)]
-    Storage[Document Storage]
-    Queue[Persisted Work / Outbox]
-    Worker[Retry Worker]
-    Webhooks[Webhook Delivery]
-    Email[Email Delivery]
+    API[FastAPI routers] --> Auth[Auth / sessions / API keys]
+    API --> Policy[Tenant context + RBAC]
+    Policy --> Domain[Cases / documents / reviews / assistant]
+    API --> Ops[Operations + platform admin]
 
-    Client --> API
-    API --> Auth
-    API --> Policy
-    Policy --> Domain
-    API --> Ops
-
-    Auth --> DB
+    Auth --> DB[(PostgreSQL)]
     Domain --> DB
     Ops --> DB
-    Domain --> Storage
-    Domain --> Queue
-    Ops --> Queue
+    Domain --> Storage[Document storage]
+    Domain --> Work[Persisted work + outbox]
+    Ops --> Work
 
-    Queue --> Worker
-    Worker --> Webhooks
-    Worker --> Email
+    Work --> Worker[Retry worker]
+    Worker --> Webhooks[Signed webhooks]
+    Worker --> Email[Email: local sink / SMTP]
     Worker --> Domain
 ```
 
-The application uses a **shared-schema multi-tenant model**. Tenant-aware data is scoped by `organization_id`, while authorization rules are enforced through organization membership and RBAC.
+The code is a modular monolith: `app/api` (HTTP layer, schemas, dependencies), `app/application` (services that implement use cases), `app/domain` (models and access policies) and `app/infrastructure` (database, storage, security, delivery adapters). The API exposes 96 operations under `/api/v1` plus `/health`, `/ready` and `/metrics`; the OpenAPI UI is at `/docs`.
 
-Operational side effects such as document processing, webhook delivery, email delivery, retries, and notification digests can be handled through persisted work records and the background worker.
+## Tech stack
 
-## Core capabilities
+| Area | Tools |
+| --- | --- |
+| API | Python 3.13, FastAPI, Pydantic v2, pydantic-settings |
+| Data | PostgreSQL 17, SQLAlchemy 2.0, Alembic (19 migrations) |
+| Auth | PyJWT access tokens bound to persisted sessions, hashed organization API keys |
+| Background work | Persisted job / webhook / email records, retry worker (`scripts/run_retry_worker.py`) |
+| Observability | structlog JSON logs, Prometheus metrics, request IDs, health and readiness probes |
+| Frontend | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4 |
+| Tooling | pytest + pytest-cov, Ruff, Playwright (end-to-end), Docker Compose, GitHub Actions |
 
-### Multi-tenancy and access control
+## Quick start
 
-- organization registration with the first owner account
-- organization membership and invitation flow
-- tenant-scoped cases and documents
-- RBAC across organizations, members, cases, documents, and webhooks
-- organization-scoped API keys for system-to-system integrations
-- dedicated read-only integration endpoints
-
-### Authentication and sessions
-
-- JWT login and refresh flow
-- persisted authentication sessions
-- refresh rotation
-- logout and logout-all
-- per-session revocation
-- device naming
-- last-seen activity tracking
-- password reset flow
-
-### Case and document workflow
-
-- tenant-scoped case CRUD and archive flow
-- case comments
-- document uploads and versioning
-- configurable inline or worker-based document processing
-- approve / reject review workflow
-- case status transitions
-- retry support for failed processing jobs
-- audit logs for cases and documents
-
-### Webhooks and email delivery
-
-- webhook endpoint management
-- event subscriptions
-- HMAC-signed webhook delivery
-- delivery history
-- retry and replay support
-- persisted outbound email outbox
-- local email sink for development
-- SMTP adapter for real delivery
-
-### Reporting and operations
-
-- case summary reporting
-- case search
-- CSV exports
-- organization operations summary
-- failure inspection
-- retry-due maintenance endpoints
-- retention preview and cleanup flows
-
-### Platform administration
-
-- platform overview
-- anomaly detection
-- risk reporting
-- tenant activity feed
-- tenant suspension and reactivation
-- review queue with assignees, comments, and due dates
-- risk snapshots
-- workload and attention views
-- automatic review opening
-- automatic assignment
-- overdue escalation
-- operator notifications
-- notification digests and preferences
-- bulk lifecycle controls
-
-### Case assistant
-
-- assistant conversation threads per case, stored with their messages
-- prompt modes: `general`, `case_summary`, `review_assistant`, `next_actions`
-- grounded answers built from case metadata, comments, and the latest document evidence
-- citations stored with every assistant response
-- assistant activity recorded in the audit log
-
-The assistant is scoped to a single case, so it respects the same tenant and case boundaries as the rest of the API.
-
-### Frontend workspace
-
-The Next.js app (App Router, TypeScript, Tailwind CSS v4) includes:
-
-- landing page
-- login and organization registration
-- operations dashboard with reporting summary, case search, and case creation
-- case workbench with summary, documents and uploads, comments, audit trail, and assistant threads
-
-## Engineering decisions
-
-A large part of the project is about keeping backend behavior predictable as the system grows.
-
-### Shared-schema multi-tenancy
-
-Tenant data is scoped explicitly by `organization_id`.
-
-This keeps the data model simple while making tenant boundaries visible in queries and authorization logic.
-
-### Persisted auth sessions
-
-Access tokens are short-lived JWTs, but they are tied to persisted sessions.
-
-That allows immediate logout, session revocation, device metadata, and activity tracking without relying only on token expiration.
-
-### Scoped API keys
-
-Organization API keys are hashed at rest and exposed through dedicated integration endpoints instead of granting broad write access to the main API.
-
-### Explicit workflow state
-
-Documents move through controlled review and processing flows rather than arbitrary state updates.
-
-Audit records preserve the history of important actions.
-
-### One retry path
-
-Organization maintenance endpoints, platform-wide retry operations, and the worker reuse the same persisted work and retry machinery.
-
-That avoids creating multiple execution paths for the same failure handling logic.
-
-### Webhook replay preserves history
-
-Replaying a webhook creates a new delivery record instead of mutating historical delivery state.
-
-This keeps the original delivery history intact.
-
-### Previewable maintenance operations
-
-Retention cleanup and several platform administration actions expose preview flows before execution.
-
-That makes destructive or bulk operations easier to inspect and reason about.
-
-### Reused operational data
-
-Risk reporting, anomaly detection, review queues, workload views, escalation, and notification flows reuse the same underlying tenant and review state instead of introducing separate parallel systems.
-
-## Selected API surface
-
-The project exposes a larger API, but these endpoints represent the main system areas:
-
-```text
-POST   /api/v1/auth/register
-POST   /api/v1/auth/login
-POST   /api/v1/auth/refresh
-GET    /api/v1/auth/sessions
-
-POST   /api/v1/api-keys
-GET    /api/v1/api-keys
-
-POST   /api/v1/cases
-GET    /api/v1/cases/{case_id}/documents
-POST   /api/v1/cases/{case_id}/documents
-GET    /api/v1/cases/{case_id}/audit-log
-
-GET    /api/v1/cases/{case_id}/assistant/conversations
-POST   /api/v1/cases/{case_id}/assistant/conversations
-GET    /api/v1/cases/{case_id}/assistant/conversations/{conversation_id}/messages
-POST   /api/v1/cases/{case_id}/assistant/conversations/{conversation_id}/messages
-
-POST   /api/v1/documents/{document_id}/approve
-POST   /api/v1/documents/{document_id}/reject
-POST   /api/v1/documents/{document_id}/jobs/{job_id}/retry
-
-POST   /api/v1/webhooks/endpoints
-GET    /api/v1/webhooks/deliveries
-POST   /api/v1/webhooks/deliveries/{delivery_id}/replay
-
-GET    /api/v1/operations/summary
-GET    /api/v1/operations/failures
-
-GET    /api/v1/admin/overview
-GET    /api/v1/admin/risk-report
-GET    /api/v1/admin/reviews
-GET    /api/v1/admin/reviews/attention-queue
-
-GET    /health
-GET    /ready
-GET    /metrics
-```
-
-## Local development
-
-### 1. Install dependencies
-
-Create or reuse a virtual environment and run:
+### Docker (API + frontend + Postgres)
 
 ```bash
-make install
+git clone https://github.com/MaciejZiel/caseflow.git && cd caseflow
+docker compose up -d --build   # API on :8000, frontend on :3000, Postgres on :5432
+make docker-seed-demo          # recreates the demo-claims workspace inside the api container
 ```
 
-### 2. Configure the environment
+Open http://127.0.0.1:3000/auth/login and click **Fill demo credentials**, or browse the API at http://127.0.0.1:8000/docs. Stop and remove the data with `docker compose down -v`.
 
-Copy the example configuration:
+Demo accounts (organization slug `demo-claims`):
+
+| Role | Email | Password |
+| --- | --- | --- |
+| owner | `demo.owner@caseflow.local` | `OwnerPass123` |
+| admin | `demo.admin@caseflow.local` | `AdminPass123` |
+| reviewer | `demo.reviewer@caseflow.local` | `ReviewerPass123` |
+| member | `demo.member@caseflow.local` | `MemberPass123` |
+
+The dataset includes approved, rejected, failed-processing and archived cases, multi-version documents, comments and an inactive webhook endpoint.
+
+### Local Python environment
+
+Requires Python 3.13 and a running PostgreSQL (for example the `db` service from `compose.yml`).
 
 ```bash
-cp .env.example .env
-```
-
-Adjust values if needed.
-
-### 3. Apply migrations
-
-```bash
+python3.13 -m venv .venv
+make install            # pip install -e ".[dev]"
+cp .env.example .env    # adjust DATABASE_URL / SECRET_KEY if needed
 make migrate
+make seed-demo          # optional
+make run                # uvicorn with reload on :8000
 ```
 
-### 4. Start the API
+Frontend: `make frontend-install && make frontend-dev` (reads `NEXT_PUBLIC_API_BASE_URL`, see `frontend/.env.example`). The API must allow the frontend origin through `CORS_ALLOWED_ORIGINS` (comma-separated or a JSON list).
 
-```bash
-make run
-```
+### Worker modes
 
-### 5. Optional: seed demo data
-
-```bash
-make seed-demo
-```
-
-The demo dataset includes:
-
-- one demo organization: `demo-claims`
-- owner, admin, reviewer, and member accounts
-- approved, rejected, failed-processing, and archived cases
-- multi-version document history
-- comments
-- an inactive webhook endpoint
-
-### 6. Optional: start the frontend
-
-```bash
-make frontend-install
-make frontend-dev
-```
-
-Then open `http://127.0.0.1:3000`. The frontend reads the API origin from `NEXT_PUBLIC_API_BASE_URL` (see `frontend/.env.example`), and the API must allow the frontend origin through `CORS_ALLOWED_ORIGINS` (comma-separated).
-
-### 7. Optional: run the worker
-
-```bash
-make retry-worker
-```
-
-For a single worker cycle:
-
-```bash
-make retry-worker-once
-```
-
-## Worker modes
-
-CaseFlow can run synchronously for a simple local setup or defer work to the background worker.
+Side effects run synchronously by default. Switch any of them to the worker:
 
 ```text
 DOCUMENT_PROCESSING_MODE=inline|worker
 WEBHOOK_DELIVERY_MODE=sync|worker
 EMAIL_DELIVERY_MODE=sync|worker
+EMAIL_DELIVERY_BACKEND=local|smtp
 ```
 
-When worker mode is enabled, work is persisted first and processed through the retry worker.
+Then run `make retry-worker` (loop) or `make retry-worker-once` (single cycle). The same cycle also sends platform admin notification digests.
 
-The same worker cycle can also process platform admin notification digests.
-
-## Email delivery
-
-Invitation and password reset emails are written through a persisted outbox.
-
-Available backends:
-
-```text
-EMAIL_DELIVERY_BACKEND=local
-EMAIL_DELIVERY_BACKEND=smtp
-```
-
-The local backend writes JSON payloads to the configured local sink path.
-
-SMTP settings can be used for real delivery.
-
-## Docker
-
-Start the local stack with:
-
-```bash
-make docker-up
-```
-
-The Docker setup includes:
-
-- FastAPI application on `127.0.0.1:8000`
-- Next.js frontend on `127.0.0.1:3000`
-- PostgreSQL 17
-- migrations on application startup
-- persistent storage for uploaded documents
-
-Stop the stack and remove data volumes with:
-
-```bash
-make docker-down
-```
-
-## Testing and CI
-
-Run the local verification baseline with:
+## Tests
 
 ```bash
 make lint
-make test
+make test                                # 148 tests
+.venv/bin/python -m pytest --cov=app     # 100% line coverage of app/
 ```
 
-The project also verifies:
+- **148 pytest tests** (103 integration, 45 unit) with **100% line coverage** of the `app` package. Integration tests call the real FastAPI app through an httpx ASGI client against SQLite and cover auth and session lifecycle, tenant isolation, RBAC, document review, webhooks (delivery, retry, replay), the email outbox, the retry worker, platform admin flows and demo seeding.
+- **CI** (GitHub Actions) runs Ruff, the full suite and `alembic upgrade head` against a PostgreSQL 17 service container on every push and pull request.
+- **End-to-end:** `make frontend-e2e` runs 2 Playwright scenarios (register and sign in; create a case, upload a document and get an assistant answer) against a throwaway API. Frontend lint and build: `make frontend-lint`, `make frontend-build`.
 
-- Alembic migrations on a clean database
-- retry worker execution
-- PostgreSQL migrations in GitHub Actions
+## Key technical decisions
 
-Frontend checks:
+**Shared schema instead of schema- or database-per-tenant.** One schema with an explicit `organization_id` keeps migrations, reporting and platform-wide admin queries simple. The cost is that every query must be scoped correctly, so tenant boundaries are enforced in the service layer and covered by cross-tenant isolation tests rather than left to convention.
 
-```bash
-make frontend-lint
-make frontend-build
-make frontend-e2e   # Playwright against a throwaway API on SQLite; needs Google Chrome
+**Short-lived JWTs bound to persisted sessions.** A stateless JWT alone cannot be revoked. Each access token references a stored session, which enables refresh-token rotation, logout-all, per-device revocation and last-seen tracking, at the price of a session lookup per request (activity writes are throttled by `AUTH_SESSION_ACTIVITY_UPDATE_INTERVAL_SECONDS`).
+
+**Persisted work records instead of a message broker.** Jobs, webhook deliveries and emails are rows in PostgreSQL that the worker picks up and retries with backoff. That gives transactional consistency with the business change, inspectable failure history and one retry path shared by the worker, tenant maintenance endpoints and platform admin, without running Redis or RabbitMQ. The trade-off is lower throughput than a dedicated queue — acceptable for back-office workloads.
+
+**History is append-only where it matters.** Replaying a webhook creates a new delivery instead of mutating the old one, document changes create new versions, and destructive maintenance (retention cleanup, bulk lifecycle actions) has a preview step. Audit questions stay answerable after the fact.
+
+<details>
+<summary>More detail: capability list and selected endpoints</summary>
+
+**Multi-tenancy and access control** — organization registration with the first owner, invitations and membership, tenant-scoped cases and documents, RBAC across organizations, members, cases, documents and webhooks, organization API keys for read-only integration endpoints.
+
+**Authentication** — JWT login and refresh with rotation, persisted sessions, logout and logout-all, per-session revocation, device naming, last-seen tracking, password reset.
+
+**Cases and documents** — case CRUD and archive, comments, document uploads and versioning, inline or worker processing, approve / reject review, status transitions, retries for failed processing, audit logs.
+
+**Webhooks and email** — endpoint management and event subscriptions, HMAC-signed delivery, delivery history, retry and replay, persisted email outbox with a local sink and an SMTP adapter.
+
+**Reporting and operations** — case summary reporting and search, CSV exports, organization operations summary, failure inspection, retry-due maintenance, retention preview and cleanup.
+
+**Platform administration** — overview, anomaly detection, risk reporting and snapshots, tenant activity feed, suspension and reactivation, review queue with assignees, comments and due dates, workload and attention views, automatic review opening and assignment, overdue escalation, operator notifications, digests and preferences, bulk lifecycle controls.
+
+**Operational hardening** — security headers, trusted-host filtering, configurable CORS allowlist, opt-in proxy header trust, structured logging, metrics. Before exposing the API publicly, configure trusted hosts and allowed origins and enable proxy header trust only behind a trusted reverse proxy.
+
+```text
+POST   /api/v1/auth/register | /auth/login | /auth/refresh      GET /api/v1/auth/sessions
+POST   /api/v1/api-keys                                         GET /api/v1/api-keys
+POST   /api/v1/cases                                            GET /api/v1/cases/{case_id}/audit-log
+GET    /api/v1/cases/{case_id}/documents                        POST /api/v1/cases/{case_id}/documents
+POST   /api/v1/cases/{case_id}/assistant/conversations/{conversation_id}/messages
+POST   /api/v1/documents/{document_id}/approve | /reject | /jobs/{job_id}/retry
+POST   /api/v1/webhooks/endpoints                               POST /api/v1/webhooks/deliveries/{delivery_id}/replay
+GET    /api/v1/operations/summary | /operations/failures
+GET    /api/v1/admin/overview | /admin/risk-report | /admin/reviews | /admin/reviews/attention-queue
+GET    /health   /ready   /metrics
 ```
 
-Integration tests cover areas including:
+</details>
 
-- authentication and session lifecycle
-- password reset
-- invitations and membership
-- tenant isolation
-- API key management
-- case reporting and search
-- document processing and review
-- audit logs
-- webhook delivery, retry, and replay
-- email outbox delivery
-- operational maintenance
-- platform administration
-- anomaly and risk reporting
-- review queue workflows
-- retention operations
-- demo data seeding
+## Deploying to Render
 
-## Operational hardening
+[`render.yaml`](render.yaml) is a Render Blueprint for the free tier. It creates:
 
-The project includes:
+- **caseflow-db** — free PostgreSQL 17 (Frankfurt).
+- **caseflow-api** — native Python 3.13 web service. `pip install .` at build; at start [`scripts/render_start.sh`](scripts/render_start.sh) runs `alembic upgrade head`, recreates the `demo-claims` workspace when `SEED_DEMO_DATA=true`, and starts uvicorn on Render's `PORT`. Health check: `/health`. `SECRET_KEY` is generated by Render; `DATABASE_URL` comes from the database (the app rewrites Render's `postgresql://` URL to the psycopg driver).
+- **caseflow-web** — the Next.js workspace built from `frontend/Dockerfile`.
 
-- health and readiness endpoints
-- metrics
-- structured logging
-- security headers
-- trusted host filtering
-- configurable CORS allowlists
-- opt-in proxy header trust
-- Docker-based local environment
-- CI verification
+Steps:
 
-Before exposing the API through a public ingress, configure trusted hosts and allowed origins appropriately and enable proxy header trust only behind a trusted reverse proxy.
+1. Click **Deploy to Render** above and sign in to Render (connect GitHub if asked).
+2. Render shows the Blueprint with the three resources and asks for two values. Enter the public URLs the services will get:
+   - `CORS_ALLOWED_ORIGINS` (caseflow-api): `https://caseflow-web.onrender.com`
+   - `NEXT_PUBLIC_API_BASE_URL` (caseflow-web): `https://caseflow-api.onrender.com`
+3. Click **Deploy Blueprint** and wait until all three resources are live.
+4. Open each service in the dashboard and compare its URL with what you entered. If Render added a suffix (for example `caseflow-api-x1y2.onrender.com`), fix the value under **Environment**, then redeploy: caseflow-api with **Manual Deploy → Deploy latest commit**, caseflow-web with **Manual Deploy → Clear build cache & deploy** (the API URL is baked into the frontend at build time).
+5. Open the caseflow-web URL, go to **Sign in** and use **Fill demo credentials**.
+
+Free-tier behaviour to know about: services sleep after 15 minutes without traffic (the first request takes up to about a minute), the disk is ephemeral, and free Postgres databases expire 30 days after creation. Because the disk is ephemeral, the demo workspace is recreated on every boot, which also discards anything visitors changed in it (including a changed demo password). Set `SEED_DEMO_DATA=false` to keep data between restarts.
+
+## Limitations and next steps
+
+- Uploaded files live on local disk (`LOCAL_STORAGE_PATH`); an S3-compatible storage adapter is the next step for multi-instance or hosted deployments.
+- The assistant is deterministic keyword retrieval with templated answers; plugging an LLM behind the same grounding and citation contract is a natural extension.
+- There is no read-only organization role yet; the least privileged demo account (`member`) can still create cases and upload documents.
+- The frontend covers the tenant workspace only; the platform review queue and admin APIs have no UI yet.
+- Notification quiet hours and routing rules per platform admin role are not implemented.
 
 ## Project structure
 
 ```text
-.
-├── app/                # application code
-├── frontend/           # Next.js workspace
-├── alembic/            # database migrations
-├── docs/               # additional documentation
-├── scripts/            # worker, demo and maintenance scripts
-├── tests/              # unit and integration tests
-├── .github/workflows/  # CI
-├── Dockerfile
-├── compose.yml
-├── Makefile
-└── pyproject.toml
+app/              FastAPI application (api / application / domain / infrastructure / workers)
+alembic/          database migrations
+frontend/         Next.js workspace and Playwright e2e tests
+scripts/          retry worker, demo seeding, superuser promotion, Render start script
+tests/            unit and integration tests
+docs/images/      README screenshots
+render.yaml       Render Blueprint
 ```
-
-## Current limitations / next steps
-
-High-value next steps currently include:
-
-- an admin UI on top of the platform review queue APIs (the current frontend covers the tenant workspace only)
-- notification quiet hours or routing rules for different platform admin roles
-
-## Tech stack
-
-**Backend:** FastAPI, SQLAlchemy, Alembic  
-**Frontend:** Next.js, TypeScript, Tailwind CSS  
-**Database:** PostgreSQL  
-**Auth:** JWT + persisted sessions + organization API keys  
-**Async / delivery:** persisted worker queues, webhook delivery, email outbox  
-**Operations:** Docker, metrics, structured logging, CI  
-**Testing:** unit and integration tests, migration verification, Playwright end-to-end tests
 
 ## License
 
