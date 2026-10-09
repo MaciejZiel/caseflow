@@ -16,6 +16,8 @@ It is built as a modular monolith with **FastAPI**, **SQLAlchemy**, **Alembic**,
 - operational tooling
 - automated tests and CI
 
+On top of the backend, a **Next.js** workspace (`frontend/`) exposes the main flows to operators, and a **case-scoped assistant** answers questions using the case's own documents and comments, with citations.
+
 ## Why this project exists
 
 CaseFlow is not meant to be another CRUD demo.
@@ -136,6 +138,25 @@ Operational side effects such as document processing, webhook delivery, email de
 - notification digests and preferences
 - bulk lifecycle controls
 
+### Case assistant
+
+- assistant conversation threads per case, stored with their messages
+- prompt modes: `general`, `case_summary`, `review_assistant`, `next_actions`
+- grounded answers built from case metadata, comments, and the latest document evidence
+- citations stored with every assistant response
+- assistant activity recorded in the audit log
+
+The assistant is scoped to a single case, so it respects the same tenant and case boundaries as the rest of the API.
+
+### Frontend workspace
+
+The Next.js app (App Router, TypeScript, Tailwind CSS v4) includes:
+
+- landing page
+- login and organization registration
+- operations dashboard with reporting summary, case search, and case creation
+- case workbench with summary, documents and uploads, comments, audit trail, and assistant threads
+
 ## Engineering decisions
 
 A large part of the project is about keeping backend behavior predictable as the system grows.
@@ -198,8 +219,14 @@ POST   /api/v1/api-keys
 GET    /api/v1/api-keys
 
 POST   /api/v1/cases
+GET    /api/v1/cases/{case_id}/documents
 POST   /api/v1/cases/{case_id}/documents
 GET    /api/v1/cases/{case_id}/audit-log
+
+GET    /api/v1/cases/{case_id}/assistant/conversations
+POST   /api/v1/cases/{case_id}/assistant/conversations
+GET    /api/v1/cases/{case_id}/assistant/conversations/{conversation_id}/messages
+POST   /api/v1/cases/{case_id}/assistant/conversations/{conversation_id}/messages
 
 POST   /api/v1/documents/{document_id}/approve
 POST   /api/v1/documents/{document_id}/reject
@@ -269,7 +296,16 @@ The demo dataset includes:
 - comments
 - an inactive webhook endpoint
 
-### 6. Optional: run the worker
+### 6. Optional: start the frontend
+
+```bash
+make frontend-install
+make frontend-dev
+```
+
+Then open `http://127.0.0.1:3000`. The frontend reads the API origin from `NEXT_PUBLIC_API_BASE_URL` (see `frontend/.env.example`), and the API must allow the frontend origin through `CORS_ALLOWED_ORIGINS` (comma-separated).
+
+### 7. Optional: run the worker
 
 ```bash
 make retry-worker
@@ -320,7 +356,8 @@ make docker-up
 
 The Docker setup includes:
 
-- FastAPI application
+- FastAPI application on `127.0.0.1:8000`
+- Next.js frontend on `127.0.0.1:3000`
 - PostgreSQL 17
 - migrations on application startup
 - persistent storage for uploaded documents
@@ -345,6 +382,14 @@ The project also verifies:
 - Alembic migrations on a clean database
 - retry worker execution
 - PostgreSQL migrations in GitHub Actions
+
+Frontend checks:
+
+```bash
+make frontend-lint
+make frontend-build
+make frontend-e2e   # Playwright against a throwaway API on SQLite; needs Google Chrome
+```
 
 Integration tests cover areas including:
 
@@ -386,10 +431,11 @@ Before exposing the API through a public ingress, configure trusted hosts and al
 ```text
 .
 ├── app/                # application code
+├── frontend/           # Next.js workspace
 ├── alembic/            # database migrations
 ├── docs/               # additional documentation
 ├── scripts/            # worker, demo and maintenance scripts
-├── tests/              # integration tests
+├── tests/              # unit and integration tests
 ├── .github/workflows/  # CI
 ├── Dockerfile
 ├── compose.yml
@@ -401,17 +447,18 @@ Before exposing the API through a public ingress, configure trusted hosts and al
 
 High-value next steps currently include:
 
-- an internal admin UI on top of the platform review queue APIs
+- an admin UI on top of the platform review queue APIs (the current frontend covers the tenant workspace only)
 - notification quiet hours or routing rules for different platform admin roles
 
 ## Tech stack
 
 **Backend:** FastAPI, SQLAlchemy, Alembic  
+**Frontend:** Next.js, TypeScript, Tailwind CSS  
 **Database:** PostgreSQL  
 **Auth:** JWT + persisted sessions + organization API keys  
 **Async / delivery:** persisted worker queues, webhook delivery, email outbox  
 **Operations:** Docker, metrics, structured logging, CI  
-**Testing:** integration tests + migration verification
+**Testing:** unit and integration tests, migration verification, Playwright end-to-end tests
 
 ## License
 
