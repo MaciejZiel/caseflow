@@ -1,5 +1,7 @@
 # CaseFlow
 
+[![CI](https://github.com/MaciejZiel/caseflow/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/MaciejZiel/caseflow/actions/workflows/ci.yml)
+
 CaseFlow is a production-style, multi-tenant B2B backend for case and document processing.
 
 It is built as a modular monolith with **FastAPI**, **SQLAlchemy**, **Alembic**, and **PostgreSQL**, with a focus on the parts that usually separate a demo API from a maintainable backend system:
