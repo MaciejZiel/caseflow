@@ -127,7 +127,7 @@ make test                                # 148 tests
 ```
 
 - **148 pytest tests** (103 integration, 45 unit) with **100% line coverage** of the `app` package. Integration tests call the real FastAPI app through an httpx ASGI client against SQLite and cover auth and session lifecycle, tenant isolation, RBAC, document review, webhooks (delivery, retry, replay), the email outbox, the retry worker, platform admin flows and demo seeding.
-- **CI** (GitHub Actions) runs Ruff, the full suite and `alembic upgrade head` against a PostgreSQL 17 service container on every push and pull request.
+- **CI** (GitHub Actions) runs Ruff lint and format checks, the full suite and `alembic upgrade head` against a PostgreSQL 17 service container on every push and pull request. CodeQL scans the Python and TypeScript code on every push to `master`, on pull requests and weekly; Dependabot proposes grouped weekly dependency updates.
 - **End-to-end:** `make frontend-e2e` runs 2 Playwright scenarios (register and sign in; create a case, upload a document and get an assistant answer) against a throwaway API. Frontend lint and build: `make frontend-lint`, `make frontend-build`.
 
 ## Key technical decisions
