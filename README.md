@@ -3,6 +3,7 @@
 **A multi-tenant B2B backend for case and document workflows — tenant isolation, RBAC, persisted sessions, audit trails, retryable background work and signed webhooks — with a Next.js workspace on top.**
 
 [![CI](https://github.com/MaciejZiel/caseflow/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/MaciejZiel/caseflow/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/MaciejZiel/caseflow/actions/workflows/codeql.yml/badge.svg?branch=master)](https://github.com/MaciejZiel/caseflow/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![Python 3.13](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
