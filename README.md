@@ -410,3 +410,7 @@ High-value next steps currently include:
 **Async / delivery:** persisted worker queues, webhook delivery, email outbox  
 **Operations:** Docker, metrics, structured logging, CI  
 **Testing:** integration tests + migration verification
+
+## License
+
+Released under the [MIT License](LICENSE).
