@@ -13,6 +13,17 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Alembic creates alembic_version.version_num as VARCHAR(32), but this and later
+    # revision ids are longer. Widen it before Alembic stamps this revision.
+    if op.get_context().dialect.name != "sqlite":
+        op.alter_column(
+            "alembic_version",
+            "version_num",
+            existing_type=sa.String(length=32),
+            type_=sa.String(length=255),
+            existing_nullable=False,
+        )
+
     op.create_table(
         "documents",
         sa.Column("id", sa.Uuid(), nullable=False),
