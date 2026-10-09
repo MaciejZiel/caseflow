@@ -349,6 +349,29 @@ def test_settings_parse_csv_settings_covers_none_and_csv_values() -> None:
         "http://b.test",
     ]
     assert Settings.parse_csv_settings(["a", "b"]) == ["a", "b"]
+    assert Settings.parse_csv_settings('["http://a.test", " http://b.test "]') == [
+        "http://a.test",
+        "http://b.test",
+    ]
+
+
+def test_settings_read_csv_lists_from_environment(monkeypatch) -> None:
+    monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "http://a.test,http://b.test")
+    monkeypatch.setenv("TRUSTED_HOST_PATTERNS", '["api.test", "localhost"]')
+    settings = Settings()
+    assert settings.cors_allowed_origins == ["http://a.test", "http://b.test"]
+    assert settings.trusted_host_patterns == ["api.test", "localhost"]
+
+
+def test_settings_normalize_managed_postgres_urls() -> None:
+    expected = "postgresql+psycopg://user:pw@db.internal:5432/caseflow"
+    for url in (
+        "postgres://user:pw@db.internal:5432/caseflow",
+        "postgresql://user:pw@db.internal:5432/caseflow",
+        expected,
+    ):
+        assert Settings.use_psycopg_driver(url) == expected
+    assert Settings.use_psycopg_driver("sqlite+pysqlite:///:memory:") == "sqlite+pysqlite:///:memory:"
 
 
 def test_security_helpers_cover_invalid_token_paths(monkeypatch) -> None:
