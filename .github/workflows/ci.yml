@@ -30,7 +30,7 @@ jobs:
 
     env:
       DATABASE_URL: postgresql+psycopg://caseflow:caseflow@127.0.0.1:5432/caseflow
-      TEST_DATABASE_URL: sqlite+pysqlite:///:memory:
+      TEST_DATABASE_URL: "sqlite+pysqlite:///:memory:"
       SECRET_KEY: ci-secret-key-with-32-plus-bytes
       LOCAL_STORAGE_PATH: ./.tmp/storage
 
