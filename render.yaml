@@ -1,0 +1,59 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# One-click deploy of the API, the Next.js workspace and a managed Postgres
+# on Render's free tier. See "Deploying to Render" in README.md.
+
+databases:
+  - name: caseflow-db
+    plan: free
+    region: frankfurt
+    postgresMajorVersion: "17"
+    databaseName: caseflow
+    user: caseflow
+
+services:
+  - type: web
+    name: caseflow-api
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: pip install .
+    startCommand: sh scripts/render_start.sh
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.7"
+      - key: APP_ENV
+        value: render
+      - key: DEBUG
+        value: "false"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: caseflow-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      # Public URL of the caseflow-web service, e.g. https://caseflow-web.onrender.com
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      # Recreates the demo-claims workspace on every boot; set to "false" to keep data.
+      - key: SEED_DEMO_DATA
+        value: "true"
+      - key: LOCAL_STORAGE_PATH
+        value: ./storage
+      - key: LOCAL_EMAIL_SINK_PATH
+        value: ./.tmp/emails
+
+  - type: web
+    name: caseflow-web
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    envVars:
+      # Public URL of the caseflow-api service, e.g. https://caseflow-api.onrender.com.
+      # Render passes it to the Docker build as a build arg; Next.js inlines it at build time.
+      - key: NEXT_PUBLIC_API_BASE_URL
+        sync: false
+      - key: PORT
+        value: "3000"
