@@ -378,9 +378,7 @@ class DocumentService:
         )
 
     def process_document_job(self, *, job_id: UUID) -> None:
-        job = self.session.scalar(
-            select(ProcessingJob).where(ProcessingJob.id == job_id)
-        )
+        job = self.session.scalar(select(ProcessingJob).where(ProcessingJob.id == job_id))
         if job is None:
             return
         if job.status not in {ProcessingJobStatus.QUEUED, ProcessingJobStatus.FAILED}:
@@ -750,8 +748,7 @@ class DocumentService:
             if job.status == ProcessingJobStatus.DEAD_LETTERED
             else datetime.now(UTC)
             + timedelta(
-                seconds=self.settings.job_retry_base_delay_seconds
-                * (2 ** max(job.attempts - 1, 0))
+                seconds=self.settings.job_retry_base_delay_seconds * (2 ** max(job.attempts - 1, 0))
             )
         )
         document.status = DocumentStatus.FAILED

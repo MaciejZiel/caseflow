@@ -71,44 +71,59 @@ class OperationsService:
         organization_id = actor.organization.id
         now = datetime.now(UTC)
 
-        active_members = self.session.scalar(
-            select(func.count())
-            .select_from(OrganizationMembership)
-            .where(
-                OrganizationMembership.organization_id == organization_id,
-                OrganizationMembership.is_active.is_(True),
+        active_members = (
+            self.session.scalar(
+                select(func.count())
+                .select_from(OrganizationMembership)
+                .where(
+                    OrganizationMembership.organization_id == organization_id,
+                    OrganizationMembership.is_active.is_(True),
+                )
             )
-        ) or 0
-        active_webhook_endpoints = self.session.scalar(
-            select(func.count())
-            .select_from(WebhookEndpoint)
-            .where(
-                WebhookEndpoint.organization_id == organization_id,
-                WebhookEndpoint.is_active.is_(True),
+            or 0
+        )
+        active_webhook_endpoints = (
+            self.session.scalar(
+                select(func.count())
+                .select_from(WebhookEndpoint)
+                .where(
+                    WebhookEndpoint.organization_id == organization_id,
+                    WebhookEndpoint.is_active.is_(True),
+                )
             )
-        ) or 0
-        active_api_keys = self.session.scalar(
-            select(func.count())
-            .select_from(ApiKey)
-            .where(
-                ApiKey.organization_id == organization_id,
-                ApiKey.revoked_at.is_(None),
-                or_(ApiKey.expires_at.is_(None), ApiKey.expires_at > now),
+            or 0
+        )
+        active_api_keys = (
+            self.session.scalar(
+                select(func.count())
+                .select_from(ApiKey)
+                .where(
+                    ApiKey.organization_id == organization_id,
+                    ApiKey.revoked_at.is_(None),
+                    or_(ApiKey.expires_at.is_(None), ApiKey.expires_at > now),
+                )
             )
-        ) or 0
-        archived_cases = self.session.scalar(
-            select(func.count())
-            .select_from(Case)
-            .where(
-                Case.organization_id == organization_id,
-                Case.status == CaseStatus.ARCHIVED,
+            or 0
+        )
+        archived_cases = (
+            self.session.scalar(
+                select(func.count())
+                .select_from(Case)
+                .where(
+                    Case.organization_id == organization_id,
+                    Case.status == CaseStatus.ARCHIVED,
+                )
             )
-        ) or 0
-        total_cases = self.session.scalar(
-            select(func.count())
-            .select_from(Case)
-            .where(Case.organization_id == organization_id)
-        ) or 0
+            or 0
+        )
+        total_cases = (
+            self.session.scalar(
+                select(func.count())
+                .select_from(Case)
+                .where(Case.organization_id == organization_id)
+            )
+            or 0
+        )
 
         return {
             "organization_id": organization_id,

@@ -61,8 +61,7 @@ async def list_case_documents(
 ) -> list[DocumentResponse]:
     documents = DocumentService(session).list_case_documents(actor=actor, case_id=case_id)
     return [
-        DocumentResponse.model_validate(document, from_attributes=True)
-        for document in documents
+        DocumentResponse.model_validate(document, from_attributes=True) for document in documents
     ]
 
 

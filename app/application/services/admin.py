@@ -295,21 +295,18 @@ class AdminService:
             .scalar_subquery()
         )
 
-        query = (
-            select(
-                Organization,
-                total_members.label("total_members"),
-                active_members.label("active_members"),
-                active_auth_sessions.label("active_auth_sessions"),
-                open_cases.label("open_cases"),
-                archived_cases.label("archived_cases"),
-                failed_jobs.label("failed_jobs"),
-                failed_webhook_deliveries.label("failed_webhook_deliveries"),
-                failed_emails.label("failed_emails"),
-                last_activity_at.label("last_activity_at"),
-            )
-            .order_by(Organization.created_at.desc())
-        )
+        query = select(
+            Organization,
+            total_members.label("total_members"),
+            active_members.label("active_members"),
+            active_auth_sessions.label("active_auth_sessions"),
+            open_cases.label("open_cases"),
+            archived_cases.label("archived_cases"),
+            failed_jobs.label("failed_jobs"),
+            failed_webhook_deliveries.label("failed_webhook_deliveries"),
+            failed_emails.label("failed_emails"),
+            last_activity_at.label("last_activity_at"),
+        ).order_by(Organization.created_at.desc())
         if limit is not None:
             query = query.limit(limit)
 
@@ -794,9 +791,7 @@ class AdminService:
             query = query.where(AuditLog.actor_user_id == actor_user_id)
         if since is not None:
             query = query.where(AuditLog.created_at >= since)
-        return list(
-            self.session.scalars(query.order_by(AuditLog.created_at.desc()).limit(limit))
-        )
+        return list(self.session.scalars(query.order_by(AuditLog.created_at.desc()).limit(limit)))
 
     def bulk_change_organization_status(
         self,

@@ -280,8 +280,7 @@ class AuthService:
         session_id: UUID,
     ) -> AuthSession:
         auth_session = self.session.scalar(
-            select(AuthSession)
-            .where(
+            select(AuthSession).where(
                 AuthSession.id == session_id,
                 AuthSession.user_id == user.id,
             )

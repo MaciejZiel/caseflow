@@ -18,8 +18,7 @@ from tests.integration.helpers import create_invitation, register_owner
 
 def _read_email_sink_files(email_dir: Path) -> list[dict[str, object]]:
     return [
-        json.loads(path.read_text(encoding="utf-8"))
-        for path in sorted(email_dir.glob("*.json"))
+        json.loads(path.read_text(encoding="utf-8")) for path in sorted(email_dir.glob("*.json"))
     ]
 
 

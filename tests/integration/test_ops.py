@@ -49,7 +49,7 @@ async def test_cors_preflight_allows_configured_origin(tmp_path, monkeypatch) ->
     async with configured_async_client(
         tmp_path,
         monkeypatch,
-        env_overrides={"CORS_ALLOWED_ORIGINS": "[\"https://app.caseflow.test\"]"},
+        env_overrides={"CORS_ALLOWED_ORIGINS": '["https://app.caseflow.test"]'},
     ) as async_client:
         response = await async_client.options(
             "/health",
@@ -86,7 +86,7 @@ async def test_trusted_host_middleware_blocks_unconfigured_hosts(tmp_path, monke
     async with configured_async_client(
         tmp_path,
         monkeypatch,
-        env_overrides={"TRUSTED_HOST_PATTERNS": "[\"testserver\", \"api.caseflow.test\"]"},
+        env_overrides={"TRUSTED_HOST_PATTERNS": '["testserver", "api.caseflow.test"]'},
     ) as async_client:
         response = await async_client.get("/health", headers={"Host": "evil.caseflow.test"})
 

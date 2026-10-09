@@ -173,9 +173,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(
             ["review_id"],
             ["admin_organization_reviews.id"],
-            name=op.f(
-                "fk_admin_organization_review_comments_review_id_admin_organization_reviews"
-            ),
+            name=op.f("fk_admin_organization_review_comments_review_id_admin_organization_reviews"),
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_admin_organization_review_comments")),

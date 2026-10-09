@@ -34,40 +34,52 @@ class ReportingService:
         now = datetime.now(UTC)
         due_soon = now + timedelta(days=7)
 
-        total_cases = self.session.scalar(
-            select(func.count())
-            .select_from(Case)
-            .where(Case.organization_id == organization_id)
-        ) or 0
-        archived_cases = self.session.scalar(
-            select(func.count())
-            .select_from(Case)
-            .where(
-                Case.organization_id == organization_id,
-                Case.status == CaseStatus.ARCHIVED,
+        total_cases = (
+            self.session.scalar(
+                select(func.count())
+                .select_from(Case)
+                .where(Case.organization_id == organization_id)
             )
-        ) or 0
-        overdue_cases = self.session.scalar(
-            select(func.count())
-            .select_from(Case)
-            .where(
-                Case.organization_id == organization_id,
-                Case.archived_at.is_(None),
-                Case.due_date.is_not(None),
-                Case.due_date < now,
+            or 0
+        )
+        archived_cases = (
+            self.session.scalar(
+                select(func.count())
+                .select_from(Case)
+                .where(
+                    Case.organization_id == organization_id,
+                    Case.status == CaseStatus.ARCHIVED,
+                )
             )
-        ) or 0
-        due_next_7_days = self.session.scalar(
-            select(func.count())
-            .select_from(Case)
-            .where(
-                Case.organization_id == organization_id,
-                Case.archived_at.is_(None),
-                Case.due_date.is_not(None),
-                Case.due_date >= now,
-                Case.due_date <= due_soon,
+            or 0
+        )
+        overdue_cases = (
+            self.session.scalar(
+                select(func.count())
+                .select_from(Case)
+                .where(
+                    Case.organization_id == organization_id,
+                    Case.archived_at.is_(None),
+                    Case.due_date.is_not(None),
+                    Case.due_date < now,
+                )
             )
-        ) or 0
+            or 0
+        )
+        due_next_7_days = (
+            self.session.scalar(
+                select(func.count())
+                .select_from(Case)
+                .where(
+                    Case.organization_id == organization_id,
+                    Case.archived_at.is_(None),
+                    Case.due_date.is_not(None),
+                    Case.due_date >= now,
+                    Case.due_date <= due_soon,
+                )
+            )
+            or 0
+        )
 
         status_counts = {
             status.value: count

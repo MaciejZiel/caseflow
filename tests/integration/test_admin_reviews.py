@@ -202,9 +202,7 @@ async def test_platform_admin_review_queue_captures_risk_snapshots_and_comments(
             headers={"Authorization": f"Bearer {admin['access_token']}"},
         )
         assert tenant_detail.status_code == 200
-        event_types = {
-            item["event_type"] for item in tenant_detail.json()["recent_audit_events"]
-        }
+        event_types = {item["event_type"] for item in tenant_detail.json()["recent_audit_events"]}
         assert {
             "admin_review.created",
             "admin_review.updated",
@@ -503,10 +501,7 @@ async def test_platform_admin_can_preview_and_auto_open_reviews_from_risk_report
             params={"min_risk_score": 50, "limit": 10},
         )
         assert preview.status_code == 200
-        preview_rows = {
-            item["organization"]["slug"]: item
-            for item in preview.json()
-        }
+        preview_rows = {item["organization"]["slug"]: item for item in preview.json()}
         assert preview_rows["auto-open-target"]["has_active_review"] is False
         assert preview_rows["existing-review-target"]["has_active_review"] is True
         assert preview_rows["auto-open-target"]["suggested_priority"] == "high"
@@ -526,10 +521,7 @@ async def test_platform_admin_can_preview_and_auto_open_reviews_from_risk_report
         assert auto_open_body["created_count"] == 1
         assert auto_open_body["skipped_count"] == 1
 
-        result_by_slug = {
-            item["organization"]["slug"]: item
-            for item in auto_open_body["results"]
-        }
+        result_by_slug = {item["organization"]["slug"]: item for item in auto_open_body["results"]}
         assert result_by_slug["auto-open-target"]["outcome"] == "created"
         assert result_by_slug["existing-review-target"]["outcome"] == "skipped"
         assert result_by_slug["existing-review-target"]["reason"] == "active_review_exists"
@@ -544,9 +536,7 @@ async def test_platform_admin_can_preview_and_auto_open_reviews_from_risk_report
         assert created_review_body["assigned_to"]["email"] == admin["email"]
         assert created_review_body["priority"] == "high"
         assert created_review_body["due_at"] is not None
-        assert created_review_body["title"] == (
-            "Platform review: Auto Open Target (high risk)"
-        )
+        assert created_review_body["title"] == ("Platform review: Auto Open Target (high risk)")
 
 
 @pytest.mark.asyncio
