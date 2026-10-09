@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -17,8 +18,13 @@ class Settings(BaseSettings):
     app_env: str = Field(default="local", alias="APP_ENV")
     debug: bool = Field(default=True, alias="DEBUG")
     api_v1_prefix: str = Field(default="/api/v1", alias="API_V1_PREFIX")
-    cors_allowed_origins: list[str] = Field(default_factory=list, alias="CORS_ALLOWED_ORIGINS")
-    trusted_host_patterns: list[str] = Field(default_factory=list, alias="TRUSTED_HOST_PATTERNS")
+    # NoDecode lets the validator below accept both CSV and JSON-list values.
+    cors_allowed_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=list, alias="CORS_ALLOWED_ORIGINS"
+    )
+    trusted_host_patterns: Annotated[list[str], NoDecode] = Field(
+        default_factory=list, alias="TRUSTED_HOST_PATTERNS"
+    )
     trust_proxy_headers: bool = Field(default=False, alias="TRUST_PROXY_HEADERS")
     security_headers_enabled: bool = Field(default=True, alias="SECURITY_HEADERS_ENABLED")
     security_hsts_max_age_seconds: int = Field(default=0, alias="SECURITY_HSTS_MAX_AGE_SECONDS")
@@ -99,7 +105,19 @@ class Settings(BaseSettings):
         if value is None:
             return []
         if isinstance(value, str):
+            if value.strip().startswith("["):
+                return [str(item).strip() for item in json.loads(value) if str(item).strip()]
             return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("database_url", mode="after")
+    @classmethod
+    def use_psycopg_driver(cls, value: str) -> str:
+        # Managed Postgres providers (e.g. Render) hand out postgres:// or postgresql:// URLs;
+        # SQLAlchemy needs the explicit psycopg (v3) driver that this project installs.
+        for prefix in ("postgres://", "postgresql://"):
+            if value.startswith(prefix):
+                return "postgresql+psycopg://" + value.removeprefix(prefix)
         return value
 
 
