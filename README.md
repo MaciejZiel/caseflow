@@ -10,10 +10,6 @@
 ![PostgreSQL 17](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
 ![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
 
-Live demo: coming soon — deploy with the button below
-
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/MaciejZiel/caseflow)
-
 ![Signing in to the demo workspace, opening a case and asking the case assistant](docs/images/demo.gif)
 
 ## What it does
