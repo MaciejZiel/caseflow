@@ -63,7 +63,7 @@ test.describe("CaseFlow workspace", () => {
     await assistantSection.getByLabel("Ask the assistant").fill(question);
     await assistantSection.getByRole("button", { name: "Ask Caseflow AI" }).click();
 
-    await expect(assistantSection.getByText(question)).toBeVisible();
+    await expect(assistantSection.getByText(question, { exact: true })).toBeVisible();
     await expect(assistantSection.getByText("Evidence used")).toBeVisible();
     await expect(assistantSection.getByText(documentTitle, { exact: true })).toBeVisible();
     await expect(assistantSection.getByText(/Recommended next actions/i)).toBeVisible();
