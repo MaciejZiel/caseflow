@@ -11,3 +11,4 @@ distributed under.
 | https://github.com/juliangruber/brace-expansion | brace-expansion 1.1.21 / 5.0.12 (transitive, frontend dev tooling) | MIT | https://github.com/juliangruber/brace-expansion/blob/main/LICENSE |
 | https://github.com/actions/setup-python | actions/setup-python v7 (CI only) | MIT | https://github.com/actions/setup-python/blob/main/LICENSE |
 | https://github.com/actions/checkout | actions/checkout v7 (CI only) | MIT | https://github.com/actions/checkout/blob/main/LICENSE |
+| https://github.com/pydantic/pydantic-settings | pydantic-settings 2.15.0 | MIT | https://github.com/pydantic/pydantic-settings/blob/main/LICENSE |
