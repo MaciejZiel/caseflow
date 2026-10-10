@@ -14,3 +14,4 @@ distributed under.
 | https://github.com/pydantic/pydantic-settings | pydantic-settings 2.15.0 | MIT | https://github.com/pydantic/pydantic-settings/blob/main/LICENSE |
 | https://github.com/psycopg/psycopg | psycopg[binary] 3.3.6 (pre-existing dependency) | LGPL-3.0-only | https://github.com/psycopg/psycopg/blob/master/LICENSE.txt |
 | https://github.com/hynek/structlog | structlog 26.1.0 | MIT OR Apache-2.0 | https://github.com/hynek/structlog/blob/main/LICENSE-MIT |
+| https://github.com/pypa/hatch | hatchling 1.32.4 (build backend) | MIT | https://github.com/pypa/hatch/blob/master/LICENSE.txt |
