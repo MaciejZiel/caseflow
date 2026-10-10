@@ -22,3 +22,4 @@ distributed under.
 | https://github.com/tailwindlabs/tailwindcss | tailwindcss 4.3.3, @tailwindcss/postcss 4.3.3 | MIT | https://github.com/tailwindlabs/tailwindcss/blob/main/LICENSE |
 | https://github.com/lovell/sharp | sharp 0.35.4 (optional dependency of next) | Apache-2.0 | https://github.com/lovell/sharp/blob/main/LICENSE |
 | https://github.com/lovell/sharp-libvips | @img/sharp-libvips-* 1.3.3 (prebuilt libvips binaries pulled in by sharp; pre-existing dependency) | LGPL-3.0-or-later | https://github.com/lovell/sharp-libvips/blob/main/THIRD-PARTY-NOTICES.md |
+| https://github.com/nodeca/js-yaml | js-yaml 4.3.2 (transitive, frontend dev tooling) | MIT | https://github.com/nodeca/js-yaml/blob/master/LICENSE |
