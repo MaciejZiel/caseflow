@@ -15,3 +15,10 @@ distributed under.
 | https://github.com/psycopg/psycopg | psycopg[binary] 3.3.6 (pre-existing dependency) | LGPL-3.0-only | https://github.com/psycopg/psycopg/blob/master/LICENSE.txt |
 | https://github.com/hynek/structlog | structlog 26.1.0 | MIT OR Apache-2.0 | https://github.com/hynek/structlog/blob/main/LICENSE-MIT |
 | https://github.com/pypa/hatch | hatchling 1.32.4 (build backend) | MIT | https://github.com/pypa/hatch/blob/master/LICENSE.txt |
+| https://github.com/vercel/next.js | next 16.3.6, eslint-config-next 16.3.6 | MIT | https://github.com/vercel/next.js/blob/canary/license.md |
+| https://github.com/facebook/react | react 19.3.0, react-dom 19.3.0 | MIT | https://github.com/facebook/react/blob/main/LICENSE |
+| https://github.com/DefinitelyTyped/DefinitelyTyped | @types/react 19.3.0, @types/react-dom 19.3.0 | MIT | https://github.com/DefinitelyTyped/DefinitelyTyped/blob/master/LICENSE |
+| https://github.com/microsoft/playwright | @playwright/test 1.63.0 | Apache-2.0 | https://github.com/microsoft/playwright/blob/main/LICENSE |
+| https://github.com/tailwindlabs/tailwindcss | tailwindcss 4.3.3, @tailwindcss/postcss 4.3.3 | MIT | https://github.com/tailwindlabs/tailwindcss/blob/main/LICENSE |
+| https://github.com/lovell/sharp | sharp 0.35.4 (optional dependency of next) | Apache-2.0 | https://github.com/lovell/sharp/blob/main/LICENSE |
+| https://github.com/lovell/sharp-libvips | @img/sharp-libvips-* 1.3.3 (prebuilt libvips binaries pulled in by sharp; pre-existing dependency) | LGPL-3.0-or-later | https://github.com/lovell/sharp-libvips/blob/main/THIRD-PARTY-NOTICES.md |
