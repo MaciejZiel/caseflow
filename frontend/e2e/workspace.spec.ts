@@ -51,20 +51,20 @@ test.describe("CaseFlow workspace", () => {
     });
     await page.getByRole("button", { name: "Upload document" }).click();
 
-    const documentCard = page.locator("article").filter({ hasText: documentTitle }).first();
-    await expect(documentCard).toBeVisible();
+    const documentRow = page.getByRole("row").filter({ hasText: documentTitle }).first();
+    await expect(documentRow).toBeVisible();
 
     const assistantSection = page
       .locator("section")
-      .filter({ has: page.getByRole("heading", { name: /Grounded threads with citations/i }) });
+      .filter({ has: page.getByRole("heading", { name: "Assistant", exact: true }) });
 
     await assistantSection.getByRole("button", { name: "New thread" }).click();
     await assistantSection.getByRole("button", { name: "Review Assistant" }).click();
     await assistantSection.getByLabel("Ask the assistant").fill(question);
-    await assistantSection.getByRole("button", { name: "Ask Caseflow AI" }).click();
+    await assistantSection.getByRole("button", { name: "Ask", exact: true }).click();
 
     await expect(assistantSection.getByText(question, { exact: true })).toBeVisible();
-    await expect(assistantSection.getByText("Evidence used")).toBeVisible();
+    await expect(assistantSection.getByText("Sources", { exact: true })).toBeVisible();
     await expect(assistantSection.getByText(documentTitle, { exact: true })).toBeVisible();
     await expect(assistantSection.getByText(/Recommended next actions/i)).toBeVisible();
   });
