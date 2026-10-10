@@ -175,7 +175,7 @@ async def test_integration_case_export_returns_tenant_scoped_csv(
 
     assert exported.status_code == 200
     assert exported.headers["content-type"].startswith("text/csv")
-    assert "attachment; filename=\"cases-export.csv\"" == exported.headers["content-disposition"]
+    assert 'attachment; filename="cases-export.csv"' == exported.headers["content-disposition"]
     assert "Visible export case" in exported.text
     assert "EXPORT-001" in exported.text
     assert "Hidden export case" not in exported.text

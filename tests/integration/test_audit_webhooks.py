@@ -102,9 +102,7 @@ async def test_case_audit_log_and_webhook_delivery_are_recorded(
     assert len(captured_requests) == 1
     delivered_request = captured_requests[0]
     delivered_body = json.loads(delivered_request["data"].decode("utf-8"))
-    delivered_headers = {
-        key.lower(): value for key, value in delivered_request["headers"].items()
-    }
+    delivered_headers = {key.lower(): value for key, value in delivered_request["headers"].items()}
     expected_signature = hmac.new(
         secret.encode("utf-8"),
         delivered_request["data"],

@@ -361,9 +361,7 @@ class AdminReviewService:
                 key=lambda review: self._attention_sort_components(review=review, now=now),
             )
             due_dates = [
-                due_at
-                for review in grouped
-                if (due_at := self._review_due_at(review)) is not None
+                due_at for review in grouped if (due_at := self._review_due_at(review)) is not None
             ]
             items.append(
                 AdminReviewWorkloadItem(
@@ -412,10 +410,7 @@ class AdminReviewService:
         if not reviews:
             return []
 
-        review_items = {
-            item.id: item
-            for item in self._build_review_list_items(reviews)
-        }
+        review_items = {item.id: item for item in self._build_review_list_items(reviews)}
         items: list[AdminReviewAttentionItem] = []
         for review in reviews:
             attention_reasons = self._build_attention_reasons(review=review, now=now)
@@ -451,9 +446,7 @@ class AdminReviewService:
         self._ensure_superuser(actor)
         now = datetime.now(UTC)
         reviews = [
-            review
-            for review in self._list_active_reviews()
-            if review.assigned_to_user_id is None
+            review for review in self._list_active_reviews() if review.assigned_to_user_id is None
         ]
         if not reviews:
             return []
@@ -650,8 +643,7 @@ class AdminReviewService:
                 .where(
                     AdminOrganizationReview.status.in_(tuple(ACTIVE_REVIEW_STATUSES)),
                     AdminOrganizationReview.due_at.is_not(None),
-                    AdminOrganizationReview.due_at
-                    <= now - timedelta(days=min_days_overdue),
+                    AdminOrganizationReview.due_at <= now - timedelta(days=min_days_overdue),
                 )
                 .order_by(
                     AdminOrganizationReview.due_at.asc(),
@@ -660,10 +652,7 @@ class AdminReviewService:
                 .limit(limit)
             )
         )
-        return [
-            self._build_escalation_preview_item(review=review, now=now)
-            for review in reviews
-        ]
+        return [self._build_escalation_preview_item(review=review, now=now) for review in reviews]
 
     def escalate_overdue_reviews(
         self,
@@ -1197,8 +1186,7 @@ class AdminReviewService:
             active_review_id=active_review_id,
             suggested_priority=self._priority_from_risk_score(risk_item.risk_score),
             suggested_title=(
-                f"Platform review: {risk_item.organization_name} "
-                f"({risk_item.risk_level} risk)"
+                f"Platform review: {risk_item.organization_name} ({risk_item.risk_level} risk)"
             ),
         )
 

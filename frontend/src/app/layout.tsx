@@ -1,25 +1,25 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Manrope } from "next/font/google";
+import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 
 import { Providers } from "@/components/app/providers";
 
 import "./globals.css";
 
-const manrope = Manrope({
-  variable: "--font-manrope",
+const plexSans = IBM_Plex_Sans({
+  variable: "--font-plex-sans",
   subsets: ["latin"],
+  weight: ["400", "500", "600"],
 });
 
-const ibmPlexMono = IBM_Plex_Mono({
-  variable: "--font-ibm-plex-mono",
+const plexMono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
   subsets: ["latin"],
   weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
-  title: "Caseflow AI",
-  description:
-    "Multi-tenant AI-assisted case operations workspace built on top of the CaseFlow backend.",
+  title: "CaseFlow",
+  description: "Case management with document review and a case assistant.",
 };
 
 export default function RootLayout({
@@ -30,9 +30,9 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${manrope.variable} ${ibmPlexMono.variable} h-full antialiased`}
+      className={`${plexSans.variable} ${plexMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full">
+      <body className="min-h-full bg-paper text-ink">
         <Providers>{children}</Providers>
       </body>
     </html>

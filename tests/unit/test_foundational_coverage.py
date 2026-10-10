@@ -371,7 +371,9 @@ def test_settings_normalize_managed_postgres_urls() -> None:
         expected,
     ):
         assert Settings.use_psycopg_driver(url) == expected
-    assert Settings.use_psycopg_driver("sqlite+pysqlite:///:memory:") == "sqlite+pysqlite:///:memory:"
+    assert (
+        Settings.use_psycopg_driver("sqlite+pysqlite:///:memory:") == "sqlite+pysqlite:///:memory:"
+    )
 
 
 def test_security_helpers_cover_invalid_token_paths(monkeypatch) -> None:
@@ -405,10 +407,13 @@ def test_security_helpers_cover_invalid_token_paths(monkeypatch) -> None:
 
     encoded = password_module.hash_password("StrongPass123")
     assert password_module.verify_password("StrongPass123", encoded) is True
-    assert password_module.verify_password(
-        "StrongPass123",
-        encoded.replace(password_module.PASSWORD_ALGORITHM, "argon2", 1),
-    ) is False
+    assert (
+        password_module.verify_password(
+            "StrongPass123",
+            encoded.replace(password_module.PASSWORD_ALGORITHM, "argon2", 1),
+        )
+        is False
+    )
 
 
 def test_local_storage_covers_stream_delete_url_and_traversal(tmp_path) -> None:
@@ -623,14 +628,17 @@ async def test_ops_and_assistant_routes_cover_remaining_branches(monkeypatch) ->
 
 
 def test_schema_validators_cover_low_level_branches() -> None:
-    assert RegistrationRequest(
-        organization_name="Acme",
-        organization_slug="acme",
-        first_name="Ada",
-        last_name="Lovelace",
-        email=" ADA@example.com ",
-        password="StrongPass123",
-    ).email == "ada@example.com"
+    assert (
+        RegistrationRequest(
+            organization_name="Acme",
+            organization_slug="acme",
+            first_name="Ada",
+            last_name="Lovelace",
+            email=" ADA@example.com ",
+            password="StrongPass123",
+        ).email
+        == "ada@example.com"
+    )
 
     with pytest.raises(ValidationError):
         LoginRequest(email="invalid", password="secret")
@@ -657,15 +665,12 @@ def test_schema_validators_cover_low_level_branches() -> None:
     with pytest.raises(ValidationError):
         ApiKeyCreateRequest(name="  Demo key  ", scopes=[ApiKeyScope.CASES_READ], expires_at=past)
 
-    assert (
-        ApiKeyCreateRequest(
-            name="  Demo key  ",
-            description="  Useful key  ",
-            scopes=[ApiKeyScope.CASES_READ, ApiKeyScope.CASES_READ],
-            expires_at=datetime.now(UTC) + timedelta(hours=1),
-        ).scopes
-        == [ApiKeyScope.CASES_READ]
-    )
+    assert ApiKeyCreateRequest(
+        name="  Demo key  ",
+        description="  Useful key  ",
+        scopes=[ApiKeyScope.CASES_READ, ApiKeyScope.CASES_READ],
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    ).scopes == [ApiKeyScope.CASES_READ]
     assert api_key_to_utc(datetime.now()).tzinfo == UTC
 
     with pytest.raises(ValidationError):
