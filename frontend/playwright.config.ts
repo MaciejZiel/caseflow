@@ -8,6 +8,9 @@ const rootDir = path.resolve(frontendDir, "..");
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
+  // The first navigation waits for the Next.js dev server to compile the page,
+  // which can push a step past the 10s expect timeout on a cold CI runner.
+  retries: process.env.CI ? 1 : 0,
   timeout: 60_000,
   expect: {
     timeout: 10_000,
