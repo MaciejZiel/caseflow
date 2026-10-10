@@ -1,7 +1,7 @@
 PYTHON ?= .venv/bin/python
 PIP ?= .venv/bin/pip
 
-.PHONY: install install-all frontend-install lint format test migrate run frontend-dev frontend-lint frontend-build frontend-e2e seed-demo retry-worker-once retry-worker promote-superuser docker-up docker-seed-demo docker-down
+.PHONY: install install-all frontend-install lint format test migrate run frontend-dev frontend-lint frontend-typecheck frontend-build frontend-e2e seed-demo retry-worker-once retry-worker promote-superuser docker-up docker-seed-demo docker-down
 
 install:
 	$(PIP) install -e ".[dev]"
@@ -31,6 +31,9 @@ frontend-dev:
 
 frontend-lint:
 	npm --prefix frontend run lint
+
+frontend-typecheck:
+	npm --prefix frontend run typecheck
 
 frontend-build:
 	npm --prefix frontend run build
