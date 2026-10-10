@@ -44,28 +44,12 @@ export default function LoginPage() {
 
   return (
     <AuthFormShell
-      eyebrow="Workspace access"
-      title="Sign in to your operations desk."
-      description="Authenticate against the existing CaseFlow backend and restore the current organization context."
-      alternateText="Need a fresh organization?"
-      alternateCtaLabel="Create one"
+      title="Sign in"
+      alternateText="New to CaseFlow?"
+      alternateCtaLabel="Create an organization"
       alternateHref="/auth/register"
     >
-      <form className="space-y-5" onSubmit={handleSubmit}>
-        <div className="surface-panel p-4">
-          <p className="eyebrow">Demo access</p>
-          <p className="mt-3 text-sm leading-7 text-slate-700">
-            Use <span className="font-semibold text-slate-950">demo.owner@caseflow.local</span> with{" "}
-            <span className="font-semibold text-slate-950">OwnerPass123</span> and optional slug{" "}
-            <span className="font-semibold text-slate-950">demo-claims</span>.
-          </p>
-          <div className="mt-4">
-            <Button onClick={fillDemoCredentials} type="button" variant="secondary">
-              Fill demo credentials
-            </Button>
-          </div>
-        </div>
-
+      <form className="space-y-4" onSubmit={handleSubmit}>
         <div className="field-shell">
           <label className="field-label" htmlFor="email">
             Email
@@ -83,7 +67,7 @@ export default function LoginPage() {
 
         <div className="field-shell">
           <label className="field-label" htmlFor="organizationSlug">
-            Workspace slug
+            Organization slug
           </label>
           <input
             id="organizationSlug"
@@ -91,7 +75,7 @@ export default function LoginPage() {
             onChange={(event) => setOrganizationSlug(event.target.value)}
             placeholder="acme-claims"
           />
-          <p className="field-help">Optional, but useful if the same email exists in multiple orgs.</p>
+          <p className="field-help">Optional. Needed only if your email belongs to several organizations.</p>
         </div>
 
         <div className="field-shell">
@@ -104,7 +88,6 @@ export default function LoginPage() {
             autoComplete="current-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            placeholder="Your secure password"
             required
           />
         </div>
@@ -112,8 +95,15 @@ export default function LoginPage() {
         {errorMessage ? <p className="field-error">{errorMessage}</p> : null}
 
         <Button disabled={isSubmitting} fullWidth type="submit">
-          {isSubmitting ? "Signing in…" : "Enter workspace"}
+          {isSubmitting ? "Signing in…" : "Sign in"}
         </Button>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-4 text-sm text-muted">
+          <span>Seeded demo data: demo-claims</span>
+          <Button onClick={fillDemoCredentials} type="button" variant="secondary">
+            Use demo account
+          </Button>
+        </div>
       </form>
     </AuthFormShell>
   );

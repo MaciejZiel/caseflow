@@ -10,8 +10,6 @@
 ![PostgreSQL 17](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
 ![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
 
-![Signing in to the demo workspace, opening a case and asking the case assistant](docs/images/demo.gif)
-
 ## What it does
 
 - **Isolates tenants in one shared schema.** Every tenant-owned row carries `organization_id`; organization membership and role-based policies decide who can read, write, review or retry.
@@ -20,9 +18,9 @@
 - **Gives platform operators tooling.** Risk and anomaly reports, a review queue with assignees and due dates, escalation, notification digests, previewable retention cleanup and tenant suspension.
 - **Answers questions about a case.** A case-scoped assistant ranks the case's documents and latest comment against the question and returns a structured answer with stored citations. It is deterministic (keyword scoring and templates) — no external LLM is called.
 
-| Operations dashboard | Case assistant with citations |
+| Case list (1440 px) | Case detail with assistant (390 px) |
 | --- | --- |
-| ![Operations dashboard for the demo-claims workspace](docs/images/dashboard.png) | ![Case assistant answering a review question with cited evidence](docs/images/case-assistant.png) |
+| ![Case list for the demo-claims workspace with status and priority breakdowns](docs/images/dashboard.png) | ![Case detail on a phone: documents, comments, activity and an assistant answer with sources](docs/images/case-mobile.png) |
 
 ## Architecture
 
