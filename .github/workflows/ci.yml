@@ -111,10 +111,15 @@ jobs:
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/pip install -e .
 
-      - name: Run end-to-end tests
+      # Tests run in the Chrome that ships with the runner image; Playwright
+      # only needs its own ffmpeg build to record videos of failed tests.
+      - name: Install Playwright ffmpeg
         run: |
           google-chrome --version
-          npm run e2e
+          npx playwright install ffmpeg
+
+      - name: Run end-to-end tests
+        run: npm run e2e
 
       - name: Upload Playwright report
         if: failure()
