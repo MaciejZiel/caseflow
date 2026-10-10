@@ -59,23 +59,13 @@ export default function RegisterPage() {
 
   return (
     <AuthFormShell
-      eyebrow="New organization"
-      title="Create a workspace that actually looks deployable."
-      description="Register an organization, issue the first owner session and enter the dashboard without leaving the product flow."
-      alternateText="Already have access?"
-      alternateCtaLabel="Sign in instead"
+      title="Create an organization"
+      alternateText="Already have an account?"
+      alternateCtaLabel="Sign in"
       alternateHref="/auth/login"
     >
-      <form className="grid gap-5 md:grid-cols-2" onSubmit={handleSubmit}>
-        <div className="surface-panel p-4 md:col-span-2">
-          <p className="eyebrow">What happens next</p>
-          <p className="mt-3 text-sm leading-7 text-slate-700">
-            Creating the organization issues the first owner session immediately, so you land
-            straight in the operations workspace without any separate activation flow.
-          </p>
-        </div>
-
-        <div className="field-shell md:col-span-2">
+      <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSubmit}>
+        <div className="field-shell sm:col-span-2">
           <label className="field-label" htmlFor="organizationName">
             Organization name
           </label>
@@ -88,7 +78,7 @@ export default function RegisterPage() {
           />
         </div>
 
-        <div className="field-shell md:col-span-2">
+        <div className="field-shell sm:col-span-2">
           <label className="field-label" htmlFor="organizationSlug">
             Organization slug
           </label>
@@ -99,7 +89,7 @@ export default function RegisterPage() {
             placeholder="acme-claims"
             required
           />
-          <p className="field-help">Slug preview: {suggestedSlug || "organization-slug"}</p>
+          <p className="field-help">Used at sign-in: {suggestedSlug || "organization-slug"}</p>
         </div>
 
         <div className="field-shell">
@@ -128,7 +118,7 @@ export default function RegisterPage() {
           />
         </div>
 
-        <div className="field-shell md:col-span-2">
+        <div className="field-shell sm:col-span-2">
           <label className="field-label" htmlFor="email">
             Email
           </label>
@@ -143,7 +133,7 @@ export default function RegisterPage() {
           />
         </div>
 
-        <div className="field-shell md:col-span-2">
+        <div className="field-shell sm:col-span-2">
           <label className="field-label" htmlFor="password">
             Password
           </label>
@@ -153,16 +143,16 @@ export default function RegisterPage() {
             autoComplete="new-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            placeholder="At least 10 chars with upper, lower and digit"
+            placeholder="10+ characters, upper and lower case, a digit"
             required
           />
         </div>
 
-        {errorMessage ? <p className="field-error md:col-span-2">{errorMessage}</p> : null}
+        {errorMessage ? <p className="field-error sm:col-span-2">{errorMessage}</p> : null}
 
-        <div className="md:col-span-2">
+        <div className="sm:col-span-2">
           <Button disabled={isSubmitting} fullWidth type="submit">
-            {isSubmitting ? "Creating workspace…" : "Create and enter workspace"}
+            {isSubmitting ? "Creating organization…" : "Create organization"}
           </Button>
         </div>
       </form>
