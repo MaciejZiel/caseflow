@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { CaseAssistantPanel } from "@/components/app/case-assistant-panel";
-import { Badge } from "@/components/ui/badge";
+import { Badge, priorityTone, statusTone } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/context/auth-context";
 import {
@@ -26,18 +27,6 @@ const documentTypeOptions = [
   "attachment",
   "other",
 ];
-
-const statusTone: Record<string, "neutral" | "success" | "warning" | "danger"> = {
-  approved: "success",
-  ready: "success",
-  in_review: "warning",
-  waiting_for_documents: "warning",
-  rejected: "danger",
-  failed: "danger",
-  archived: "neutral",
-  queued: "neutral",
-  processing: "warning",
-};
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -93,14 +82,14 @@ export function CaseDetailWorkbench({ caseId }: CaseDetailWorkbenchProps) {
 
   const timeline = useMemo(
     () =>
-      auditLog.slice(-8).reverse().map((entry) => ({
+      auditLog.slice(-12).reverse().map((entry) => ({
         ...entry,
         summary:
           typeof entry.metadata_json?.body_excerpt === "string"
             ? entry.metadata_json.body_excerpt
             : entry.new_values_json?.status && typeof entry.new_values_json.status === "string"
               ? `Status changed to ${formatEnumLabel(entry.new_values_json.status)}`
-              : "Captured in audit log",
+              : null,
       })),
     [auditLog],
   );
@@ -149,143 +138,97 @@ export function CaseDetailWorkbench({ caseId }: CaseDetailWorkbenchProps) {
 
   if (loadState === "error") {
     return (
-      <section className="surface-card border-rose-200 bg-rose-50/75">
-        <p className="eyebrow text-rose-700">Case detail error</p>
-        <p className="mt-3 text-base text-rose-900">{errorMessage}</p>
-      </section>
+      <div className="space-y-4">
+        <BackLink />
+        <p className="notice-error">{errorMessage}</p>
+      </div>
     );
   }
 
   if (loadState === "loading" || !caseRecord) {
-    return (
-      <section className="surface-card">
-        <p className="eyebrow">Case detail</p>
-        <p className="mt-4 text-base text-slate-600">
-          Loading case, documents and operator notes…
-        </p>
-      </section>
-    );
+    return <p className="empty">Loading case…</p>;
   }
 
   return (
-    <div className="space-y-6">
-      <section className="grid gap-6 2xl:grid-cols-[1.05fr_0.95fr]">
-        <div className="surface-panel-dark relative overflow-hidden p-6 text-slate-50 md:p-8">
-          <div className="absolute right-[-5rem] top-[-3rem] h-48 w-48 rounded-full bg-orange-500/16 blur-3xl" />
-          <div className="absolute bottom-[-5rem] left-[-2rem] h-44 w-44 rounded-full bg-teal-400/10 blur-3xl" />
-          <div className="relative">
-            <div className="flex flex-wrap items-center gap-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
-                Case workbench
-              </p>
-              <Badge value={caseRecord.status} tone={statusTone[caseRecord.status] ?? "neutral"} />
-              <Badge value={caseRecord.priority} />
-            </div>
-
-            <h1 className="mt-5 text-4xl font-semibold tracking-[-0.06em] text-white md:text-5xl">
-              {caseRecord.title}
-            </h1>
-            <p className="mt-5 max-w-3xl text-base leading-8 text-slate-300">
-              {caseRecord.description || "No description has been added to this case yet."}
-            </p>
-
-            <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <WorkbenchMetric
-                label="External reference"
-                value={caseRecord.external_id || "No external id"}
-              />
-              <WorkbenchMetric label="Due date" value={formatDate(caseRecord.due_date)} />
-              <WorkbenchMetric
-                label="Documents"
-                value={`${documents.length} attached`}
-              />
-              <WorkbenchMetric
-                label="Last updated"
-                value={formatDateTime(caseRecord.updated_at)}
-              />
-            </div>
-          </div>
+    <div className="space-y-5">
+      <div>
+        <BackLink />
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <h1 className="text-xl font-semibold">{caseRecord.title}</h1>
+          <Badge value={caseRecord.status} tone={statusTone[caseRecord.status] ?? "neutral"} />
+          <Badge
+            value={caseRecord.priority}
+            tone={priorityTone[caseRecord.priority] ?? "neutral"}
+          />
         </div>
+        {caseRecord.description ? (
+          <p className="mt-1.5 max-w-3xl text-muted">{caseRecord.description}</p>
+        ) : null}
+        <dl className="mt-3 flex flex-wrap gap-x-8 gap-y-2">
+          <Meta label="Reference" value={caseRecord.external_id ?? "–"} mono />
+          <Meta label="Due" value={caseRecord.due_date ? formatDate(caseRecord.due_date) : "–"} />
+          <Meta label="Created" value={formatDateTime(caseRecord.created_at)} />
+          <Meta label="Updated" value={formatDateTime(caseRecord.updated_at)} />
+        </dl>
+      </div>
 
-        <CaseAssistantPanel caseId={caseId} />
-      </section>
+      {errorMessage ? <p className="notice-error">{errorMessage}</p> : null}
 
-      {errorMessage ? (
-        <section className="surface-card border-amber-200 bg-amber-50/80">
-          <p className="eyebrow text-amber-700">Workspace notice</p>
-          <p className="mt-3 text-base text-amber-900">{errorMessage}</p>
-        </section>
-      ) : null}
-
-      <section className="grid gap-6 2xl:grid-cols-[1.08fr_0.92fr]">
-        <div className="space-y-6">
-          <div className="surface-card p-6 md:p-7">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <p className="eyebrow">Evidence</p>
-                <h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-slate-950">
-                  Documents attached to this case
-                </h2>
-              </div>
-              <span className="rounded-full border border-slate-200 bg-white/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-700">
-                {documents.length} total
-              </span>
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
+        <div className="min-w-0 space-y-5">
+          <section className="panel">
+            <div className="panel-head">
+              <h2 className="panel-title">Documents</h2>
+              <span className="count">{documents.length}</span>
             </div>
-
-            <div className="mt-6 grid gap-4">
-              {documents.length === 0 ? (
-                <EmptyStateCard message="No documents yet. Use the upload form to attach the first document to this case." />
-              ) : (
-                documents.map((document) => (
-                  <article key={document.id} className="surface-panel p-5">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                      <div>
-                        <div className="flex flex-wrap items-center gap-3">
-                          <p className="text-xl font-semibold tracking-[-0.03em] text-slate-950">
-                            {document.title}
-                          </p>
+            {documents.length === 0 ? (
+              <p className="empty">No documents attached.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="data-table min-w-[560px]">
+                  <thead>
+                    <tr>
+                      <th>Title</th>
+                      <th>Type</th>
+                      <th>Status</th>
+                      <th>Uploaded</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {documents.map((document) => (
+                      <tr key={document.id}>
+                        <td>
+                          <span className="font-medium">{document.title}</span>
+                          {document.mime_type ? (
+                            <span className="block font-mono text-xs text-muted">
+                              {document.mime_type}
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="whitespace-nowrap">
+                          {formatEnumLabel(document.document_type)}
+                        </td>
+                        <td>
                           <Badge
                             value={document.status}
                             tone={statusTone[document.status] ?? "neutral"}
                           />
-                        </div>
-                        <p className="mt-3 text-sm leading-7 text-slate-600">
-                          {document.mime_type
-                            ? `${document.mime_type} document ready for review`
-                            : "Document ready for review"}
-                        </p>
-                      </div>
-                      <div className="rounded-[1.1rem] bg-slate-100/80 px-3 py-2 text-sm font-medium text-slate-700">
-                        {formatEnumLabel(document.document_type)}
-                      </div>
-                    </div>
-
-                    <div className="mt-4 grid gap-3 md:grid-cols-3">
-                      <MiniField label="Type" value={formatEnumLabel(document.document_type)} />
-                      <MiniField label="MIME type" value={document.mime_type ?? "Unknown"} />
-                      <MiniField label="Uploaded" value={formatDateTime(document.created_at)} />
-                    </div>
-                  </article>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="surface-card p-6 md:p-7">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <p className="eyebrow">Upload</p>
-                <h2 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-slate-950">
-                  Add new evidence
-                </h2>
+                        </td>
+                        <td className="whitespace-nowrap text-muted">
+                          {formatDateTime(document.created_at)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <span className="rounded-full bg-orange-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-orange-900">
-                PDF or text
-              </span>
-            </div>
+            )}
 
-            <form className="mt-6 grid gap-4 md:grid-cols-2" onSubmit={handleUploadSubmit}>
-              <div className="field-shell md:col-span-2">
+            <form
+              className="grid gap-3 border-t border-line bg-paper/50 p-4 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]"
+              onSubmit={handleUploadSubmit}
+            >
+              <div className="field-shell">
                 <label className="field-label" htmlFor="document-title">
                   Title
                 </label>
@@ -293,7 +236,7 @@ export function CaseDetailWorkbench({ caseId }: CaseDetailWorkbenchProps) {
                   id="document-title"
                   value={uploadTitle}
                   onChange={(event) => setUploadTitle(event.target.value)}
-                  placeholder="Repair estimate"
+                  placeholder="Defaults to the file name"
                 />
               </div>
 
@@ -332,114 +275,93 @@ export function CaseDetailWorkbench({ caseId }: CaseDetailWorkbenchProps) {
                 />
               </div>
 
-              <div className="md:col-span-2">
+              <div className="flex items-end">
                 <Button disabled={uploadSubmitting} fullWidth type="submit">
                   {uploadSubmitting ? "Uploading…" : "Upload document"}
                 </Button>
               </div>
             </form>
-          </div>
-        </div>
+          </section>
 
-        <div className="space-y-6">
-          <div className="surface-card p-6 md:p-7">
-            <p className="eyebrow">Operator notes</p>
-            <h2 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-slate-950">
-              Comments and handoff context
-            </h2>
-
-            <form className="mt-6 space-y-4" onSubmit={handleCommentSubmit}>
-              <div className="field-shell">
-                <label className="field-label" htmlFor="comment-body">
-                  Add operator note
-                </label>
-                <textarea
-                  id="comment-body"
-                  value={commentBody}
-                  onChange={(event) => setCommentBody(event.target.value)}
-                  placeholder="Record what changed, what is blocked or what the next reviewer should verify."
-                  required
-                />
-              </div>
-              <Button disabled={commentSubmitting} fullWidth type="submit">
+          <section className="panel">
+            <div className="panel-head">
+              <h2 className="panel-title">Comments</h2>
+              <span className="count">{comments.length}</span>
+            </div>
+            {comments.length === 0 ? (
+              <p className="empty">No comments yet.</p>
+            ) : (
+              <ul>
+                {comments.map((comment) => (
+                  <li key={comment.id} className="border-b border-line px-4 py-3">
+                    <p className="whitespace-pre-line">{comment.body}</p>
+                    <p className="mt-1 text-xs text-muted">{formatDateTime(comment.created_at)}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <form className="space-y-2 p-4" onSubmit={handleCommentSubmit}>
+              <label className="field-label" htmlFor="comment-body">
+                Add comment
+              </label>
+              <textarea
+                id="comment-body"
+                value={commentBody}
+                onChange={(event) => setCommentBody(event.target.value)}
+                required
+              />
+              <Button disabled={commentSubmitting} type="submit" variant="secondary">
                 {commentSubmitting ? "Posting…" : "Post comment"}
               </Button>
             </form>
+          </section>
 
-            <div className="mt-6 space-y-3">
-              {comments.length === 0 ? (
-                <EmptyStateCard message="No comments on this case yet." />
-              ) : (
-                comments.map((comment) => (
-                  <article key={comment.id} className="surface-panel px-4 py-4">
-                    <p className="text-sm leading-7 text-slate-800">{comment.body}</p>
-                    <p className="mt-3 text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
-                      {formatDateTime(comment.created_at)}
-                    </p>
-                  </article>
-                ))
-              )}
+          <section className="panel">
+            <div className="panel-head">
+              <h2 className="panel-title">Activity</h2>
+              <span className="count">Last {timeline.length}</span>
             </div>
-          </div>
-
-          <div className="surface-card p-6 md:p-7">
-            <p className="eyebrow">Audit trail</p>
-            <h2 className="mt-3 text-2xl font-semibold tracking-[-0.05em] text-slate-950">
-              Recent case activity
-            </h2>
-
-            <div className="mt-6 space-y-3">
-              {timeline.length === 0 ? (
-                <EmptyStateCard message="Audit entries will appear as case activity grows." />
-              ) : (
-                timeline.map((entry) => (
-                  <article key={entry.id} className="surface-panel px-4 py-4">
-                    <div className="flex items-center justify-between gap-4">
-                      <p className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-700">
-                        {entry.event_type.replaceAll(".", " ")}
-                      </p>
-                      <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
-                        {formatDateTime(entry.created_at)}
-                      </p>
-                    </div>
-                    <p className="mt-3 text-sm leading-7 text-slate-600">{entry.summary}</p>
-                  </article>
-                ))
-              )}
-            </div>
-          </div>
+            {timeline.length === 0 ? (
+              <p className="empty">No activity recorded.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="data-table min-w-[480px]">
+                  <tbody>
+                    {timeline.map((entry) => (
+                      <tr key={entry.id}>
+                        <td className="whitespace-nowrap text-muted">
+                          {formatDateTime(entry.created_at)}
+                        </td>
+                        <td className="whitespace-nowrap font-mono text-xs">{entry.event_type}</td>
+                        <td className="text-muted">{entry.summary ?? ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
         </div>
-      </section>
+
+        <CaseAssistantPanel caseId={caseId} />
+      </div>
     </div>
   );
 }
 
-function WorkbenchMetric({ label, value }: { label: string; value: string }) {
+function BackLink() {
   return (
-    <div className="rounded-[1.5rem] border border-white/10 bg-white/6 p-4">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-        {label}
-      </p>
-      <p className="mt-3 text-lg font-semibold tracking-[-0.03em] text-white">{value}</p>
-    </div>
+    <Link className="text-sm text-accent hover:underline" href="/workspace">
+      ← All cases
+    </Link>
   );
 }
 
-function EmptyStateCard({ message }: { message: string }) {
+function Meta({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div className="rounded-[1.6rem] border border-dashed border-slate-300 bg-white/55 px-5 py-8 text-sm text-slate-500">
-      {message}
-    </div>
-  );
-}
-
-function MiniField({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[1.2rem] bg-slate-100/85 px-4 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-        {label}
-      </p>
-      <p className="mt-2 text-sm font-medium text-slate-800">{value}</p>
+    <div>
+      <dt className="text-xs text-muted">{label}</dt>
+      <dd className={mono ? "font-mono text-[13px]" : undefined}>{value}</dd>
     </div>
   );
 }
