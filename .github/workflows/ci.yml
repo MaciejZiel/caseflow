@@ -63,3 +63,70 @@ jobs:
 
       - name: Verify migrations on PostgreSQL
         run: python -m alembic upgrade head
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      # The Playwright config starts its own throwaway API (SQLite, port 8001)
+      # from the repository virtualenv and the Next.js dev server (port 3001),
+      # so no database service or Docker Compose stack is needed.
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install backend for end-to-end tests
+        working-directory: .
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install -e .
+
+      # Tests run in the Chrome that ships with the runner image; Playwright
+      # only needs its own ffmpeg build to record videos of failed tests.
+      - name: Install Playwright ffmpeg
+        run: |
+          google-chrome --version
+          npx playwright install ffmpeg
+
+      - name: Run end-to-end tests
+        run: npm run e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 7
