@@ -22,6 +22,7 @@ The frontend expects `NEXT_PUBLIC_API_BASE_URL` to point at the backend origin.
 ## Quality checks
 
 - `npm run lint`
+- `npm run typecheck`
 - `npm run build`
 - `npm run e2e` (starts its own API on port 8001 and frontend on port 3001)
 
