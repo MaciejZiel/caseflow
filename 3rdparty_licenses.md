@@ -12,3 +12,4 @@ distributed under.
 | https://github.com/actions/setup-python | actions/setup-python v7 (CI only) | MIT | https://github.com/actions/setup-python/blob/main/LICENSE |
 | https://github.com/actions/checkout | actions/checkout v7 (CI only) | MIT | https://github.com/actions/checkout/blob/main/LICENSE |
 | https://github.com/pydantic/pydantic-settings | pydantic-settings 2.15.0 | MIT | https://github.com/pydantic/pydantic-settings/blob/main/LICENSE |
+| https://github.com/psycopg/psycopg | psycopg[binary] 3.3.6 (pre-existing dependency) | LGPL-3.0-only | https://github.com/psycopg/psycopg/blob/master/LICENSE.txt |
