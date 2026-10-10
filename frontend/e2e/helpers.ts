@@ -34,27 +34,19 @@ export async function registerWorkspace(page: Page, credentials: WorkspaceCreden
   await page.getByLabel("Email").fill(credentials.email);
   await page.getByLabel("Password").fill(credentials.password);
 
-  await page.getByRole("button", { name: "Create and enter workspace" }).click();
+  await page.getByRole("button", { name: "Create organization" }).click();
   await expect(page).toHaveURL(/\/workspace$/);
-  await expect(
-    page.getByRole("heading", {
-      name: /See workload, unblock cases and move review work faster/i,
-    }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Cases" })).toBeVisible();
 }
 
 export async function loginWorkspace(page: Page, credentials: WorkspaceCredentials) {
   await page.goto("/auth/login");
 
   await page.getByLabel("Email").fill(credentials.email);
-  await page.getByLabel("Workspace slug").fill(credentials.organizationSlug);
+  await page.getByLabel("Organization slug").fill(credentials.organizationSlug);
   await page.getByLabel("Password").fill(credentials.password);
 
-  await page.getByRole("button", { name: "Enter workspace" }).click();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page).toHaveURL(/\/workspace$/);
-  await expect(
-    page.getByRole("heading", {
-      name: /See workload, unblock cases and move review work faster/i,
-    }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Cases" })).toBeVisible();
 }

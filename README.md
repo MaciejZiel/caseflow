@@ -10,12 +10,6 @@
 ![PostgreSQL 17](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
 ![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
 
-Live demo: coming soon — deploy with the button below
-
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/MaciejZiel/caseflow)
-
-![Signing in to the demo workspace, opening a case and asking the case assistant](docs/images/demo.gif)
-
 ## What it does
 
 - **Isolates tenants in one shared schema.** Every tenant-owned row carries `organization_id`; organization membership and role-based policies decide who can read, write, review or retry.
@@ -24,9 +18,9 @@ Live demo: coming soon — deploy with the button below
 - **Gives platform operators tooling.** Risk and anomaly reports, a review queue with assignees and due dates, escalation, notification digests, previewable retention cleanup and tenant suspension.
 - **Answers questions about a case.** A case-scoped assistant ranks the case's documents and latest comment against the question and returns a structured answer with stored citations. It is deterministic (keyword scoring and templates) — no external LLM is called.
 
-| Operations dashboard | Case assistant with citations |
+| Case list (1440 px) | Case detail with assistant (390 px) |
 | --- | --- |
-| ![Operations dashboard for the demo-claims workspace](docs/images/dashboard.png) | ![Case assistant answering a review question with cited evidence](docs/images/case-assistant.png) |
+| ![Case list for the demo-claims workspace with status and priority breakdowns](docs/images/dashboard.png) | ![Case detail on a phone: documents, comments, activity and an assistant answer with sources](docs/images/case-mobile.png) |
 
 ## Architecture
 
@@ -127,7 +121,7 @@ make test                                # 148 tests
 ```
 
 - **148 pytest tests** (103 integration, 45 unit) with **100% line coverage** of the `app` package. Integration tests call the real FastAPI app through an httpx ASGI client against SQLite and cover auth and session lifecycle, tenant isolation, RBAC, document review, webhooks (delivery, retry, replay), the email outbox, the retry worker, platform admin flows and demo seeding.
-- **CI** (GitHub Actions) runs Ruff lint and format checks, the full suite and `alembic upgrade head` against a PostgreSQL 17 service container on every push and pull request. CodeQL scans the Python and TypeScript code on every push to `master`, on pull requests and weekly; Dependabot proposes grouped weekly dependency updates.
+- **CI** (GitHub Actions) runs Ruff lint and format checks, the full suite and `alembic upgrade head` against a PostgreSQL 17 service container on every push and pull request. A separate frontend job runs ESLint, `tsc --noEmit`, `next build` and the Playwright end-to-end scenarios in headless Chrome against a throwaway SQLite-backed API. CodeQL scans the Python and TypeScript code on every push to `master`, on pull requests and weekly; Dependabot proposes grouped weekly dependency updates.
 - **End-to-end:** `make frontend-e2e` runs 2 Playwright scenarios (register and sign in; create a case, upload a document and get an assistant answer) against a throwaway API. Frontend lint and build: `make frontend-lint`, `make frontend-build`.
 
 ## Key technical decisions
